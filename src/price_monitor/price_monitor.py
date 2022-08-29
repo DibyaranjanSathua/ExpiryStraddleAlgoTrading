@@ -115,7 +115,7 @@ class PriceMonitor:
             # Remove the PriceRegister object that is triggered
             triggered_signals: List[PriceRegister] = []
             for reg in self.REGISTER:
-                logger.info(f"Registered: {reg}")
+                logger.info(f"Registered: {reg} with id {id(reg)}")
                 live_price = self._redis_backend.get(reg.symbol)
                 if live_price is None or "ltp" not in live_price:
                     raise PriceMonitorError(
@@ -136,6 +136,7 @@ class PriceMonitor:
                     reg.down_func()
                     triggered_signals.append(reg)
             for reg in triggered_signals:
+                logger.info(f"Removing reg with id {id(reg)}")
                 self.REGISTER.remove(reg)
             time.sleep(2)
 

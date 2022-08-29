@@ -101,17 +101,18 @@ class Strategy1(BaseStrategy):
             if self.exit_time(now):
                 self.exit()
                 break
-            if not self._first_shifting:
-                # Logic for first shifting
-                self.first_shifting_registration()
-            else:
-                # Second shifting onwards
-                self.second_shifting_registration()
-            pnl = self.get_strategy_pnl()
-            logger.info(f"Strategy PnL: {pnl}")
-            target_sl_hit = self.monitor_pnl(pnl)
-            if target_sl_hit:
-                break
+            if self._entry_taken:
+                if not self._first_shifting:
+                    # Logic for first shifting
+                    self.first_shifting_registration()
+                else:
+                    # Second shifting onwards
+                    self.second_shifting_registration()
+                pnl = self.get_strategy_pnl()
+                logger.info(f"Strategy PnL: {pnl}")
+                target_sl_hit = self.monitor_pnl(pnl)
+                if target_sl_hit:
+                    break
             time.sleep(2)
         logger.info(f"Execution completed")
 
@@ -328,6 +329,5 @@ if __name__ == "__main__":
     price_monitor = PriceMonitor()
     price_monitor.setup()
     price_monitor.run_in_background()
-    print("Strategy")
     strategy = Strategy1(price_monitor=price_monitor)
     strategy.execute()
