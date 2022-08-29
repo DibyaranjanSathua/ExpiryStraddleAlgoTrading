@@ -44,6 +44,7 @@ class PriceMonitor:
         self._symbol_parser = AngelBrokingSymbolParser.instance()
         self._expiry: Optional[datetime.date] = None
         self._expiry_str = ""
+        self.stop_monitor = False
 
     def setup(self):
         """ Setup required class for price monitor """
@@ -112,6 +113,9 @@ class PriceMonitor:
         """ Monitor price of a symbol and call appropriate function """
         # Remove the PriceRegister obj when a function is called
         while True:
+            if self.stop_monitor:
+                logger.info(f"Stopping price monitoring")
+                break
             # Remove the PriceRegister object that is triggered
             triggered_signals: List[PriceRegister] = []
             for reg in self.REGISTER:

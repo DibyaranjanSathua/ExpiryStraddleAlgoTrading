@@ -114,6 +114,8 @@ class Strategy1(BaseStrategy):
                 if target_sl_hit:
                     break
             time.sleep(2)
+        logger.info(f"Stopping price monitoring")
+        self._price_monitor.stop_monitor = True
         logger.info(f"Execution completed")
 
     def first_shifting_registration(self):
@@ -202,11 +204,11 @@ class Strategy1(BaseStrategy):
         self._straddle_strike = self._price_monitor.get_atm_strike()
         logger.info(f"Shifting straddle")
         logger.info(
-            f"Straddle {self._straddle} entry price: "
+            f"Previous straddle {self._straddle} entry price: "
             f"{self.get_pair_instrument_entry_price(self._straddle)}"
         )
         logger.info(
-            f"Straddle {self._straddle} exit price: "
+            f"Previous straddle {self._straddle} exit price: "
             f"{self.get_pair_instrument_current_price(self._straddle)}"
         )
         # Calculate the pnl of previous straddle
@@ -223,6 +225,8 @@ class Strategy1(BaseStrategy):
             strike=self._straddle_strike, option_type="PE", action=Action.SELL, entry=now
         )
         logger.info(f"Shifting straddle to {self._straddle}")
+        straddle_price = self.get_pair_instrument_entry_price(self._straddle)
+        logger.info(f"Straddle price: {straddle_price}")
         if not self._first_shifting:
             # If it is first shifting, mark first shifting as True which will ensure code flow
             # for second shifting
