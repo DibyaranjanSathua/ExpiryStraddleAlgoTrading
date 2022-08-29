@@ -36,7 +36,7 @@ def run_strategy1():
 def main():
     """ Main function """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--market_feeds", action="store_true")
+    parser.add_argument("--market-feeds", action="store_true")
     parser.add_argument("--trading", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--clean-up", action="store_true")
