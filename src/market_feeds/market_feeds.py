@@ -6,7 +6,7 @@ Created on:     09/08/22, 8:32 pm
 from typing import List
 import datetime
 
-from src.brokerapi.angelbroking.api import AngelBrokingApi, AngelBrokingSymbolParser, \
+from src.brokerapi.angelbroking import AngelBrokingApi, AngelBrokingSymbolParser, \
     TokenSymbolMapper
 
 

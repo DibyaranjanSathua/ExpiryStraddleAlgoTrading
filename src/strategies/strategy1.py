@@ -6,6 +6,7 @@ Created on:     22/08/22, 9:30 pm
 import time
 from typing import Optional
 import datetime
+import math
 
 from src.strategies.base_strategy import BaseStrategy
 from src.utils import utc2ist, istnow, make_ist_aware
@@ -36,39 +37,64 @@ class Strategy1(BaseStrategy):
         # At any point we should register once
         self._price_monitor_register: bool = False
         self._entry_taken: bool = False
+        self._entry_time: Optional[datetime.datetime] = None
         self._sl: Optional[float] = None
         self._target: Optional[float] = None
+        self._initial_capital: Optional[float] = None
+        self._lot_size: int = 0
+        self._remaining_lot_traded: bool = False    # Indicate if remaining lot traded or not
 
     def entry(self) -> None:
         """ Entry logic """
-        now = istnow()
-        logger.info(f"Entry taken at {now}")
+        self._entry_time = istnow()
+        logger.info(f"Entry taken at {self._entry_time}")
         self._market_price = self._price_monitor.get_nifty_value()
         self._straddle_strike = self._price_monitor.get_atm_strike()
         logger.info(f"Market price: {self._market_price}")
         logger.info(f"ATM strike: {self._straddle_strike}")
+        self._lot_size = self.initial_lot_size
+        logger.info(f"Initial lot size: {self._lot_size}")
         self._straddle.ce_instrument = self.get_instrument(
-            strike=self._straddle_strike, option_type="CE", action=Action.SELL, entry=now
+            strike=self._straddle_strike,
+            option_type="CE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
         )
         self._straddle.pe_instrument = self.get_instrument(
-            strike=self._straddle_strike, option_type="PE", action=Action.SELL, entry=now
+            strike=self._straddle_strike,
+            option_type="PE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
         )
         logger.info(f"Shorting straddle {self._straddle}")
         straddle_price = self.get_pair_instrument_entry_price(self._straddle)
         logger.info(f"Straddle price: {straddle_price}")
+        self.place_pair_instrument_order(self._straddle)
         # TODO: Read price value from config
         ce_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="CE")
         pe_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="PE")
         self._hedging.ce_instrument = self.get_instrument(
-            strike=ce_buy_strike, option_type="CE", action=Action.BUY, entry=now
+            strike=ce_buy_strike,
+            option_type="CE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=self._entry_time
         )
         self._hedging.pe_instrument = self.get_instrument(
-            strike=pe_buy_strike, option_type="PE", action=Action.BUY, entry=now
+            strike=pe_buy_strike,
+            option_type="PE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=self._entry_time
         )
         logger.info(f"Hedging {self._hedging}")
         hedging_price = self.get_pair_instrument_entry_price(self._hedging)
         logger.info(f"Hedging price: {hedging_price}")
+        self.place_pair_instrument_order(self._hedging)
         self._entry_taken = True
+        logger.info(f"Remaining lot to trade: {self.remaining_lot_size}")
 
     def exit(self) -> None:
         """ Exit logic """
@@ -94,6 +120,8 @@ class Strategy1(BaseStrategy):
         """ Execute the strategy """
         logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
         super(Strategy1, self).execute()
+        logger.info(f"Initial Capital: {self.initial_capital}")
+        logger.info(f"Capital to trade: {self.capital_to_trade}")
         while True:
             now = istnow()
             if self.entry_time(now) and not self._entry_taken:
@@ -102,6 +130,8 @@ class Strategy1(BaseStrategy):
                 self.exit()
                 break
             if self._entry_taken:
+                if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
+                    self.trade_remaining_lot()
                 if not self._first_shifting:
                     # Logic for first shifting
                     self.first_shifting_registration()
@@ -109,6 +139,7 @@ class Strategy1(BaseStrategy):
                     # Second shifting onwards
                     self.second_shifting_registration()
                 pnl = self.get_strategy_pnl()
+                logger.info(f"Lot traded: {self._lot_size}")
                 logger.info(f"Strategy PnL: {pnl}")
                 target_sl_hit = self.monitor_pnl(pnl)
                 if target_sl_hit:
@@ -218,11 +249,26 @@ class Strategy1(BaseStrategy):
         logger.info(f"Market price: {self._market_price}")
         logger.info(f"ATM strike: {self._straddle_strike}")
         now = istnow()
+        # If remaining lots are not traded, during shifting trade the remaining lot
+        if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
+            logger.info(f"Trading remaining lot during shifting")
+            self._lot_size += self.remaining_lot_size
+            logger.info(f"Final lot size: {self._lot_size}")
+            self._remaining_lot_traded = True
+
         self._straddle.ce_instrument = self.get_instrument(
-            strike=self._straddle_strike, option_type="CE", action=Action.SELL, entry=now
+            strike=self._straddle_strike,
+            option_type="CE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=now
         )
         self._straddle.pe_instrument = self.get_instrument(
-            strike=self._straddle_strike, option_type="PE", action=Action.SELL, entry=now
+            strike=self._straddle_strike,
+            option_type="PE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=now
         )
         logger.info(f"Shifting straddle to {self._straddle}")
         straddle_price = self.get_pair_instrument_entry_price(self._straddle)
@@ -235,13 +281,76 @@ class Strategy1(BaseStrategy):
         # we can register for new shifting
         self._price_monitor_register = False
 
+    def trade_remaining_lot(self):
+        """
+        Trade remaining lots if the initial straddle is same as current straddle else wait
+        for next shifting
+        """
+        now = istnow()
+        logger.info(f"Trading remaining {self.remaining_lot_size} lot  at {now}")
+        current_market_price = self._price_monitor.get_nifty_value()
+        current_straddle_strike = self._price_monitor.get_atm_strike()
+        logger.info(f"Market price: {current_market_price}")
+        logger.info(f"ATM strike: {current_straddle_strike}")
+        if current_straddle_strike == self._straddle_strike:
+            remaining_lot_straddle: PairInstrument = PairInstrument()
+            remaining_lot_straddle.ce_instrument = self.get_instrument(
+                strike=current_straddle_strike,
+                option_type="CE",
+                action=Action.SELL,
+                lot_size=self.remaining_lot_size,
+                entry=now
+            )
+            remaining_lot_straddle.pe_instrument = self.get_instrument(
+                strike=current_straddle_strike,
+                option_type="PE",
+                action=Action.SELL,
+                lot_size=self.remaining_lot_size,
+                entry=now
+            )
+            logger.info(f"Shorting straddle {remaining_lot_straddle}")
+            straddle_price = self.get_pair_instrument_entry_price(remaining_lot_straddle)
+            logger.info(f"Straddle price: {straddle_price}")
+            self.place_pair_instrument_order(remaining_lot_straddle)
+            remaining_lot_hedging: PairInstrument = PairInstrument()
+            remaining_lot_hedging.ce_instrument = self.get_instrument(
+                strike=self._hedging.ce_instrument.strike,
+                option_type="CE",
+                action=Action.BUY,
+                lot_size=self.remaining_lot_size,
+                entry=now
+            )
+            remaining_lot_hedging.pe_instrument = self.get_instrument(
+                strike=self._hedging.pe_instrument.strike,
+                option_type="PE",
+                action=Action.BUY,
+                lot_size=self.remaining_lot_size,
+                entry=now
+            )
+            logger.info(f"Hedging {remaining_lot_hedging}")
+            hedging_price = self.get_pair_instrument_entry_price(remaining_lot_hedging)
+            logger.info(f"Hedging price: {hedging_price}")
+            self.place_pair_instrument_order(remaining_lot_hedging)
+            self._lot_size += self.remaining_lot_size
+            self._remaining_lot_traded = True
+        else:
+            logger.info(
+                f"Initial straddle strike {self._straddle_strike} and current straddle strike "
+                f"{current_straddle_strike} are not same. Skipping trading remaining lots."
+            )
+
     def get_instrument(
-            self, strike: int, option_type: str, action: Action, entry: datetime.datetime
+            self,
+            strike: int,
+            option_type: str,
+            action: Action,
+            lot_size: int,
+            entry: datetime.datetime,
     ):
         """ Return a CE instrument """
         instrument = Instrument(
             action=action,
-            lot_size=50,
+            lot_size=lot_size * self.QUANTITY,
             expiry=self._price_monitor.expiry,
             option_type=option_type,
             strike=strike,
@@ -257,7 +366,7 @@ class Strategy1(BaseStrategy):
         """ Get the strategy pnl """
         straddle_pnl = self.get_pair_instrument_pnl(self._straddle)
         hedging_pnl = self.get_pair_instrument_pnl(self._hedging)
-        return round((self._pnl + straddle_pnl + hedging_pnl) * self.QUANTITY, 2)
+        return round((self._pnl + straddle_pnl + hedging_pnl) * self.QUANTITY * self._lot_size, 2)
 
     def get_pair_instrument_pnl(self, instrument: PairInstrument):
         """ Calculate current straddle pnl """
@@ -275,10 +384,6 @@ class Strategy1(BaseStrategy):
         # logger.info(f"PnL for {instrument.symbol}: {pnl}")
         return round(pnl, 2)
 
-    def get_initial_capital(self):
-        """ Get the initial capital using API """
-        return 100000
-
     @staticmethod
     def calc_pnl(entry_price: float, current_price: float, action: Action):
         """ Calculate pnl """
@@ -290,7 +395,7 @@ class Strategy1(BaseStrategy):
     @staticmethod
     def entry_time(dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time. Entry time is 9:50 AM """
-        start_time = datetime.time(hour=9, minute=50)
+        start_time = datetime.time(hour=9, minute=30)
         return dt.time() > start_time
 
     @staticmethod
@@ -298,6 +403,11 @@ class Strategy1(BaseStrategy):
         """ Return True if the time is more than exit time. Exit time is 3:00 PM """
         end_time = datetime.time(hour=15, minute=0)
         return dt.time() > end_time
+
+    def time_to_trade_remaining_lot(self, dt: datetime.datetime) -> bool:
+        """ Return True if the time is more than entry time + 25 mins else False """
+        trade_time = self._entry_time + datetime.timedelta(minutes=1)
+        return dt.time() > trade_time.time()
 
     def get_pair_instrument_entry_price(self, pair_instrument: PairInstrument) -> float:
         """ Return pair instrument entry price which is summation of individual instrument """
@@ -317,16 +427,49 @@ class Strategy1(BaseStrategy):
     @property
     def sl(self) -> float:
         if self._sl is None:
-            initial_capital = self.get_initial_capital()
-            self._sl = self.SL_PERCENT * initial_capital / 100
+            self._sl = self.SL_PERCENT * self.initial_capital / 100
         return self._sl * -1
 
     @property
     def target(self) -> float:
         if self._target is None:
-            initial_capital = self.get_initial_capital()
-            self._target = self.TARGET_PERCENT * initial_capital / 100
+            self._target = self.TARGET_PERCENT * self.initial_capital / 100
         return self._target
+
+    @property
+    def initial_capital(self) -> float:
+        """ Make API call to get initial capital in the account """
+        if self._initial_capital is None:
+            # API Call
+            self._initial_capital = 1000000
+        return self._initial_capital
+
+    @property
+    def capital_to_trade(self) -> float:
+        """ Calculate capital to trade which is 95% of initial capital """
+        return 0.95 * self.initial_capital
+
+    @property
+    def expected_margin_per_lot(self) -> float:
+        """ A rough estimate for margin per lot """
+        return 50000
+
+    @property
+    def actual_margin_per_lot(self) -> float:
+        """ MAke API call to get actual margin used and divide it by initial lot """
+        margin_used = 600000    # Get this using API call
+        return round(margin_used / self.initial_lot_size, 2)
+
+    @property
+    def initial_lot_size(self) -> int:
+        """ Initial lot size based on your initial capital """
+        return math.floor(math.floor(self.initial_capital / self.expected_margin_per_lot) / 2)
+
+    @property
+    def remaining_lot_size(self) -> int:
+        """ Calculate how many lot we can trade with the remaining capital """
+        margin_used = self.actual_margin_per_lot * self.initial_lot_size
+        return math.floor((self.capital_to_trade - margin_used) / self.actual_margin_per_lot)
 
 
 if __name__ == "__main__":

@@ -43,4 +43,4 @@ class PairInstrument:
         self.pe_instrument: Optional[Instrument] = None
 
     def __str__(self):
-        return f"{self.ce_instrument} & {self.pe_instrument}"
+        return f"{self.ce_instrument} & {self.pe_instrument} with {self.ce_instrument.lot_size} qty"

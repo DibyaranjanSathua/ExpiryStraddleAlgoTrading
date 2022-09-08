@@ -7,6 +7,9 @@ from typing import Dict, Any
 from abc import ABC, abstractmethod
 import datetime
 
+from src.brokerapi.angelbroking import AngelBrokingApi
+from src.strategies.instrument import Instrument, PairInstrument, Action
+
 
 class BaseStrategy(ABC):
     """ Abstract class contains common functions that needs to be implemented in the child class """
@@ -29,6 +32,10 @@ class BaseStrategy(ABC):
         pass
 
     def process_live_tick(self) -> None:
+        pass
+
+    def place_pair_instrument_order(self, pair_instrument: PairInstrument):
+        """ Place the order using broker API """
         pass
 
     @staticmethod
