@@ -395,7 +395,7 @@ class Strategy1(BaseStrategy):
     @staticmethod
     def entry_time(dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time. Entry time is 9:50 AM """
-        start_time = datetime.time(hour=9, minute=30)
+        start_time = datetime.time(hour=9, minute=50)
         return dt.time() > start_time
 
     @staticmethod
@@ -406,7 +406,7 @@ class Strategy1(BaseStrategy):
 
     def time_to_trade_remaining_lot(self, dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time + 25 mins else False """
-        trade_time = self._entry_time + datetime.timedelta(minutes=1)
+        trade_time = self._entry_time + datetime.timedelta(minutes=25)
         return dt.time() > trade_time.time()
 
     def get_pair_instrument_entry_price(self, pair_instrument: PairInstrument) -> float:
