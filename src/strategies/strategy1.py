@@ -401,7 +401,7 @@ class Strategy1(BaseStrategy):
     @staticmethod
     def exit_time(dt: datetime.datetime) -> bool:
         """ Return True if the time is more than exit time. Exit time is 3:00 PM """
-        end_time = datetime.time(hour=15, minute=0)
+        end_time = datetime.time(hour=15, minute=10)
         return dt.time() > end_time
 
     def time_to_trade_remaining_lot(self, dt: datetime.datetime) -> bool:
