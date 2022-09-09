@@ -34,7 +34,7 @@ class BaseStrategy(ABC):
 
     @abstractmethod
     def execute(self) -> None:
-        pass
+        self.setup_broking_api()
 
     def process_live_tick(self) -> None:
         pass
