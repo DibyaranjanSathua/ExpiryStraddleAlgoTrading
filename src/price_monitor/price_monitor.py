@@ -41,7 +41,7 @@ class PriceMonitor:
 
     def __init__(self):
         self._redis_backend = RedisBackend()
-        self._symbol_parser = AngelBrokingSymbolParser.instance()
+        self._symbol_parser: Optional[AngelBrokingSymbolParser] = None
         self._expiry: Optional[datetime.date] = None
         self._expiry_str = ""
         self.stop_monitor = False
@@ -49,7 +49,7 @@ class PriceMonitor:
     def setup(self):
         """ Setup required class for price monitor """
         self._redis_backend.connect()
-        self._symbol_parser.parse()
+        self._symbol_parser = AngelBrokingSymbolParser.instance()
         self._expiry = self._symbol_parser.current_week_expiry
         self._expiry_str = self._expiry.strftime("%d%b%y").upper()
 
