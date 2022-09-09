@@ -11,6 +11,11 @@ from src import BASE_DIR
 from src.market_feeds.market_feeds import MarketFeeds
 from src.strategies.strategy1 import Strategy1
 from src.price_monitor.price_monitor import PriceMonitor
+from src.utils.logger import LogFacade
+
+
+trading_logger: LogFacade = LogFacade.get_logger("trading_main")
+market_feed_logger: LogFacade = LogFacade.get_logger("market_feed_main")
 
 
 def run_market_feed():
@@ -42,9 +47,15 @@ def main():
     parser.add_argument("--clean-up", action="store_true")
     args = parser.parse_args()
     if args.trading:
-        run_strategy1()
+        try:
+            run_strategy1()
+        except Exception as err:
+            trading_logger.error(err)
     if args.market_feeds:
-        run_market_feed()
+        try:
+            run_market_feed()
+        except Exception as err:
+            market_feed_logger.error(err)
 
 
 if __name__ == "__main__":
