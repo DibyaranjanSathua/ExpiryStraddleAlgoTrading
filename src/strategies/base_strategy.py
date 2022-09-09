@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from src import BASE_DIR
 from src.brokerapi.angelbroking import AngelBrokingApi
 from src.strategies.instrument import Instrument, PairInstrument, Action
+from src.utils.logger import LogFacade
+
+
+logger: LogFacade = LogFacade.get_logger("base_strategy")
 
 
 class BaseStrategy(ABC):
@@ -61,6 +65,9 @@ class BaseStrategy(ABC):
 
     def place_pair_instrument_order(self, pair_instrument: PairInstrument):
         """ Place the order using broker API """
+        if self.dry_run:
+            logger.info(f"Skipping placing order as running in dry-run mode")
+            return None
         self._broker_api.place_intraday_options_order(pair_instrument.ce_instrument)
         self._broker_api.place_intraday_options_order(pair_instrument.pe_instrument)
 

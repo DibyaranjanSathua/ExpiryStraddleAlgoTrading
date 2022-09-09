@@ -27,6 +27,8 @@ class Strategy1(BaseStrategy):
 
     def __init__(self, price_monitor: PriceMonitor, dry_run: bool = False):
         super(Strategy1, self).__init__(dry_run=dry_run)
+        if dry_run:
+            logger.info(f"Executing in dry-run mode")
         self._straddle: PairInstrument = PairInstrument()
         self._hedging: PairInstrument = PairInstrument()
         self._price_monitor: PriceMonitor = price_monitor
@@ -43,6 +45,8 @@ class Strategy1(BaseStrategy):
         self._initial_capital: Optional[float] = None
         self._lot_size: int = 0
         self._remaining_lot_traded: bool = False    # Indicate if remaining lot traded or not
+        self._remaining_lot_size: Optional[int] = None
+        self._actual_margin_per_lot: Optional[float] = None
 
     def entry(self) -> None:
         """ Entry logic """
@@ -261,6 +265,12 @@ class Strategy1(BaseStrategy):
         straddle_pnl = self.get_pair_instrument_pnl(self._straddle)
         logger.info(f"Straddle {self._straddle} PnL: {straddle_pnl}")
         self._pnl += straddle_pnl
+        # Squaring off previous straddle
+        logger.info(f"Squaring off straddle {self._straddle}")
+        self._straddle.ce_instrument.action = Action.BUY
+        self._straddle.pe_instrument.action = Action.BUY
+        self.place_pair_instrument_order(self._straddle)
+
         logger.info(f"Market price: {self._market_price}")
         logger.info(f"ATM strike: {self._straddle_strike}")
         now = istnow()
@@ -357,7 +367,10 @@ class Strategy1(BaseStrategy):
         logger.info(f"Straddle price: {straddle_price}")
         self.place_pair_instrument_order(remaining_lot_straddle)
         # Update the total lot size
+        logger.info(f"Lot size before trading remaining lot: {self._lot_size}")
+        logger.info(f"Remaining lot size: {self.remaining_lot_size}")
         self._lot_size += self.remaining_lot_size
+        logger.info(f"Final lot size after trading remaining lot: {self._lot_size}")
         # Update lot size for straddle
         self._straddle.ce_instrument.lot_size = self._lot_size
         self._straddle.pe_instrument.lot_size = self._lot_size
@@ -508,8 +521,11 @@ class Strategy1(BaseStrategy):
     @property
     def actual_margin_per_lot(self) -> float:
         """ MAke API call to get actual margin used and divide it by initial lot """
-        margin_used = self.get_used_margin()    # Get this using API call
-        return round(margin_used / self.initial_lot_size, 2)
+        if self._actual_margin_per_lot is None:
+            margin_used = self.get_used_margin()    # Get this using API call
+            self._actual_margin_per_lot = round(margin_used / self.initial_lot_size, 2)
+            logger.info(f"Actual margin per lot: {self._actual_margin_per_lot}")
+        return self._actual_margin_per_lot
 
     @property
     def initial_lot_size(self) -> int:
@@ -519,13 +535,17 @@ class Strategy1(BaseStrategy):
     @property
     def remaining_lot_size(self) -> int:
         """ Calculate how many lot we can trade with the remaining capital """
-        margin_used = self.actual_margin_per_lot * self.initial_lot_size
-        return math.floor((self.capital_to_trade - margin_used) / self.actual_margin_per_lot)
+        if self._remaining_lot_size is None:
+            margin_used = self.actual_margin_per_lot * self.initial_lot_size
+            self._remaining_lot_size = math.floor(
+                (self.capital_to_trade - margin_used) / self.actual_margin_per_lot
+            )
+        return self._remaining_lot_size
 
 
 if __name__ == "__main__":
     price_monitor = PriceMonitor()
     price_monitor.setup()
     price_monitor.run_in_background()
-    strategy = Strategy1(price_monitor=price_monitor)
+    strategy = Strategy1(price_monitor=price_monitor, dry_run=True)
     strategy.execute()

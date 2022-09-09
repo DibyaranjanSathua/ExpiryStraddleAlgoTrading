@@ -453,11 +453,11 @@ if __name__ == "__main__":
             price=0,
             order_id=""
     )
-    status = api.place_intraday_options_order(instrument)
-    print(f"Order status: {status}")
-    print(f"Order id: {instrument.order_id}")
-    funds = api.get_funds_and_margin()
-    print(funds)
+    # status = api.place_intraday_options_order(instrument)
+    # print(f"Order status: {status}")
+    # print(f"Order id: {instrument.order_id}")
+    # funds = api.get_funds_and_margin()
+    # print(funds)
     # print(instrument)
     # instrument = symbol_parser.get_symbol_data(
     #     ticker="NIFTY",

@@ -29,7 +29,7 @@ def run_market_feed():
     market_feeds.setup()
 
 
-def run_strategy1():
+def run_strategy1(dry_run: bool):
     """ Run strategy1 """
     price_monitor = PriceMonitor()
     price_monitor.setup()
@@ -48,7 +48,7 @@ def main():
     args = parser.parse_args()
     if args.trading:
         try:
-            run_strategy1()
+            run_strategy1(dry_run=args.dry_run)
         except Exception as err:
             trading_logger.error(err)
     if args.market_feeds:
