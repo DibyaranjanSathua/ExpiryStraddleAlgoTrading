@@ -276,9 +276,9 @@ class Strategy1(BaseStrategy):
         now = istnow()
         # If remaining lots are not traded, during shifting trade the remaining lot
         if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
-            logger.info(f"Trading remaining lot during shifting")
-            self.buy_remaining_lot_hedging()
+            logger.info(f"Trading remaining {self.remaining_lot_size} lot during shifting")
             self._lot_size += self.remaining_lot_size
+            self.buy_remaining_lot_hedging()
             logger.info(f"Final lot size: {self._lot_size}")
             self._remaining_lot_traded = True
 
@@ -372,11 +372,11 @@ class Strategy1(BaseStrategy):
         self._lot_size += self.remaining_lot_size
         logger.info(f"Final lot size after trading remaining lot: {self._lot_size}")
         # Update lot size for straddle
-        self._straddle.ce_instrument.lot_size = self._lot_size
-        self._straddle.pe_instrument.lot_size = self._lot_size
+        self._straddle.ce_instrument.lot_size = self._lot_size * self.QUANTITY
+        self._straddle.pe_instrument.lot_size = self._lot_size * self.QUANTITY
         # Update lot size for hedging
-        self._hedging.ce_instrument.lot_size = self._lot_size
-        self._hedging.pe_instrument.lot_size = self._lot_size
+        self._hedging.ce_instrument.lot_size = self._lot_size * self.QUANTITY
+        self._hedging.pe_instrument.lot_size = self._lot_size * self.QUANTITY
         self._remaining_lot_traded = True
 
     def buy_remaining_lot_hedging(self):
@@ -402,6 +402,9 @@ class Strategy1(BaseStrategy):
         hedging_price = self.get_pair_instrument_entry_price(remaining_lot_hedging)
         logger.info(f"Hedging price: {hedging_price}")
         self.place_pair_instrument_order(remaining_lot_hedging)
+        # Update lot size for hedging
+        self._hedging.ce_instrument.lot_size += self.remaining_lot_size * self.QUANTITY
+        self._hedging.pe_instrument.lot_size += self.remaining_lot_size * self.QUANTITY
 
     def get_instrument(
             self,
