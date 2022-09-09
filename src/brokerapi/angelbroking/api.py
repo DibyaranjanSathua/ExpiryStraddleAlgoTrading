@@ -5,12 +5,18 @@ Created on:     05/08/22, 9:52 pm
 """
 from typing import Optional, List, Dict
 import datetime
+import enum
 
 import requests
 from smartapi import SmartConnect, SmartWebSocket as SmartWebSocket_
 
 from src.brokerapi.base_api import BaseApi, BrokerApiError
+from src.strategies.instrument import Instrument, Action
 from src.utils.redis_backend import RedisBackend
+from src.utils.logger import LogFacade
+
+
+logger: LogFacade = LogFacade.get_logger("angelbroking_api")
 
 
 class SmartWebSocket(SmartWebSocket_):
@@ -20,6 +26,42 @@ class SmartWebSocket(SmartWebSocket_):
         self.HB_THREAD_FLAG = True
         print("__on_close################")
         self._on_close(ws)
+
+
+class OrderConstants:
+    """ Constants used while placing the order """
+    class Variety(enum.Enum):
+        NORMAL = "NORMAL"
+        STOPLOSS = "STOPLOSS"
+        AMO = "AMO"
+        ROBO = "ROBO"
+
+    class TransactionType(enum.Enum):
+        BUY = "BUY"
+        SELL = "SELL"
+
+    class OrderType(enum.Enum):
+        MARKET = "MARKET"
+        LIMIT = "LIMIT"
+        STOPLOSS_LIMIT = "STOPLOSS_LIMIT"
+        STOPLOSS_MARKET = "STOPLOSS_MARKET"
+
+    class ProductType(enum.Enum):
+        DELIVERY = "DELIVERY"           # Cash & Carry for equity (CNC)
+        CARRYFORWARD = "CARRYFORWARD"   # Normal for futures and options (NRML)
+        MARGIN = "MARGIN"
+        INTRADAY = "INTRADAY"           # Margin Intraday Squareoff (MIS)
+        BO = "BO"                       # Bracket Order (Only for ROBO)
+
+    class Duration(enum.Enum):
+        DAY = "DAY"                     # Regular Order
+        IOC = "IOC"                     # Immediate or Cancel
+
+    class Exchange(enum.Enum):
+        BSE = "BSE"
+        NSE = "NSE"
+        NFO = "NFO"
+        MCX = "MCX"
 
 
 class AngelBrokingApi(BaseApi):
@@ -34,6 +76,7 @@ class AngelBrokingApi(BaseApi):
         self._access_token: Optional[str] = None
         self._feed_token: Optional[str] = None
         self._market_feeds: Optional[AngelBrokingMarketFeed] = None
+        self._symbol_parser: Optional[AngelBrokingSymbolParser] = None
 
     def login(self):
         """ Login to smart API """
@@ -44,6 +87,7 @@ class AngelBrokingApi(BaseApi):
             )
         self._refresh_token = response["data"]["refreshToken"]
         self._feed_token = self._smart_connect.getfeedToken()
+        self._symbol_parser = AngelBrokingSymbolParser.instance()
 
     def get_user_profile(self):
         """ Return user profile """
@@ -83,6 +127,49 @@ class AngelBrokingApi(BaseApi):
         )
         self._market_feeds.setup()
         # self._market_feeds.connect()
+
+    def place_intraday_options_order(self, instrument: Instrument) -> bool:
+        """ Place intraday options order, Return True if order placed successfully else False """
+        # Get the symbol details such as trading symbol and symbol token
+        symbol_data = self.get_symbol_data(instrument)
+        action = OrderConstants.TransactionType.BUY.value if instrument.action == Action.BUY \
+            else OrderConstants.TransactionType.SELL.value
+        logger.info(f"Placing intraday {action} order for {instrument}")
+        orderparams = {
+            "tradingsymbol": symbol_data["symbol"],
+            "symboltoken": symbol_data["token"],
+            "exchange": OrderConstants.Exchange.NFO.value,
+            "transactiontype": action,
+            "ordertype": OrderConstants.OrderType.MARKET.value,
+            "quantity": instrument.lot_size,
+            "producttype": OrderConstants.ProductType.INTRADAY.value,
+            "variety": OrderConstants.Variety.NORMAL.value,
+            "duration": "DAY",
+        }
+        try:
+            response = self._smart_connect.placeOrder(orderparams=orderparams)
+            logger.info(f"Order Parameters: {orderparams}")
+            logger.info(f"Order Response: {response}")
+            instrument.order_id = response
+            logger.info(
+                f"{action} order placed successfully for {instrument} with order id "
+                f"{instrument.order_id}"
+            )
+            return True
+        except Exception as err:
+            logger.error(f"Error placing order")
+            logger.error(err)
+            return False
+
+    def get_symbol_data(self, instrument: Instrument):
+        """ Get the broker symbol data """
+        data = self._symbol_parser.get_symbol_data(
+            ticker=instrument.index,
+            strike=instrument.strike,
+            expiry=instrument.expiry,
+            option_type=instrument.option_type
+        )
+        return {"symbol": data["symbol"], "token": data["token"]}
 
     @property
     def market_feeds(self) -> Optional["AngelBrokingMarketFeed"]:
@@ -218,9 +305,10 @@ class AngelBrokingSymbolParser:
         """ Return instance of this class. This is a singleton class """
         if cls.__instance is None:
             cls.__instance = cls()
+            cls.__instance._parse()
         return cls.__instance
 
-    def parse(self):
+    def _parse(self):
         """ Parse JSON data """
         response = requests.get(self.symbol_master_file)
         if response.ok:
@@ -341,20 +429,35 @@ if __name__ == "__main__":
     print(user)
     funds = api.get_funds_and_margin()
     print(funds)
-    data = api.get_ltp_data(trading_symbol="NIFTY", symbol_token="26000", exhange="NSE")
-    print(data)
-    api.setup_market_feeds()
-    # symbol_parser = AngelBrokingSymbolParser.instance()
+    # data = api.get_ltp_data(trading_symbol="NIFTY", symbol_token="26000", exhange="NSE")
+    # print(data)
+    # api.setup_market_feeds()
+    symbol_parser = AngelBrokingSymbolParser.instance()
     # symbol_parser1 = AngelBrokingSymbolParser.instance()
     # print(id(symbol_parser) == id(symbol_parser1))
-    # symbol_parser.parse()
-    # print(symbol_parser.current_week_expiry)
-    # instrument = symbol_parser.get_symbol_data(
-    #     ticker="NIFTY",
-    #     strike_price=17900,
-    #     expiry=symbol_parser.current_week_expiry,
-    #     option_type="CE"
-    # )
+    print(symbol_parser.current_week_expiry)
+    symbol_data = symbol_parser.get_symbol_data(
+        ticker="NIFTY",
+        strike=18500,
+        expiry=symbol_parser.current_week_expiry,
+        option_type="CE"
+    )
+    instrument = Instrument(
+            action=Action.BUY,
+            lot_size=50,
+            expiry=symbol_parser.current_week_expiry,
+            option_type="CE",
+            strike=18500,
+            index="NIFTY",
+            entry=datetime.datetime.now(),
+            price=0,
+            order_id=""
+    )
+    status = api.place_intraday_options_order(instrument)
+    print(f"Order status: {status}")
+    print(f"Order id: {instrument.order_id}")
+    funds = api.get_funds_and_margin()
+    print(funds)
     # print(instrument)
     # instrument = symbol_parser.get_symbol_data(
     #     ticker="NIFTY",

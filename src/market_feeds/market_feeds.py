@@ -3,7 +3,7 @@ File:           market_feeds.py
 Author:         Dibyaranjan Sathua
 Created on:     09/08/22, 8:32 pm
 """
-from typing import List
+from typing import List, Optional
 import datetime
 
 from src.brokerapi.angelbroking import AngelBrokingApi, AngelBrokingSymbolParser, \
@@ -17,7 +17,7 @@ class MarketFeeds:
         self._client_id = client_id
         self._password = password
         self._api = AngelBrokingApi(api_key=api_key, client_id=client_id, password=password)
-        self._symbol_parser = AngelBrokingSymbolParser.instance()
+        self._symbol_parser: Optional[AngelBrokingSymbolParser] = None
         self._option_tokens = []        # Stores the token for subscribing for web socket data
         self._token_symbol_mapper = TokenSymbolMapper()
 
@@ -26,7 +26,7 @@ class MarketFeeds:
         self._api.login()
         # Just to check if login is successful, fetch user profile
         self._api.get_user_profile()
-        self._symbol_parser.parse()
+        self._symbol_parser = AngelBrokingSymbolParser.instance()
         # Get the nifty ltp to determine the ATM price
         data = self._api.get_ltp_data(
             trading_symbol="NIFTY",

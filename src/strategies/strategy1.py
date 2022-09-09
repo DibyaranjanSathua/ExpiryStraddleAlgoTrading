@@ -54,25 +54,7 @@ class Strategy1(BaseStrategy):
         logger.info(f"ATM strike: {self._straddle_strike}")
         self._lot_size = self.initial_lot_size
         logger.info(f"Initial lot size: {self._lot_size}")
-        self._straddle.ce_instrument = self.get_instrument(
-            strike=self._straddle_strike,
-            option_type="CE",
-            action=Action.SELL,
-            lot_size=self._lot_size,
-            entry=self._entry_time
-        )
-        self._straddle.pe_instrument = self.get_instrument(
-            strike=self._straddle_strike,
-            option_type="PE",
-            action=Action.SELL,
-            lot_size=self._lot_size,
-            entry=self._entry_time
-        )
-        logger.info(f"Shorting straddle {self._straddle}")
-        straddle_price = self.get_pair_instrument_entry_price(self._straddle)
-        logger.info(f"Straddle price: {straddle_price}")
-        self.place_pair_instrument_order(self._straddle)
-        # TODO: Read price value from config
+        # Buy hedging
         ce_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="CE")
         pe_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="PE")
         self._hedging.ce_instrument = self.get_instrument(
@@ -93,6 +75,25 @@ class Strategy1(BaseStrategy):
         hedging_price = self.get_pair_instrument_entry_price(self._hedging)
         logger.info(f"Hedging price: {hedging_price}")
         self.place_pair_instrument_order(self._hedging)
+        # Sell Straddle
+        self._straddle.ce_instrument = self.get_instrument(
+            strike=self._straddle_strike,
+            option_type="CE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
+        )
+        self._straddle.pe_instrument = self.get_instrument(
+            strike=self._straddle_strike,
+            option_type="PE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
+        )
+        logger.info(f"Shorting straddle {self._straddle}")
+        straddle_price = self.get_pair_instrument_entry_price(self._straddle)
+        logger.info(f"Straddle price: {straddle_price}")
+        self.place_pair_instrument_order(self._straddle)
         self._entry_taken = True
         logger.info(f"Remaining lot to trade: {self.remaining_lot_size}")
 
@@ -100,7 +101,13 @@ class Strategy1(BaseStrategy):
         """ Exit logic """
         logger.info(f"Exiting strategy")
         logger.info(f"Squaring off straddle {self._straddle}")
+        self._straddle.ce_instrument.action = Action.BUY
+        self._straddle.pe_instrument.action = Action.BUY
+        self.place_pair_instrument_order(self._straddle)
         logger.info(f"Squaring off hedges {self._hedging}")
+        self._hedging.ce_instrument.action = Action.SELL
+        self._hedging.pe_instrument.action = Action.SELL
+        self.place_pair_instrument_order(self._hedging)
 
     def monitor_pnl(self, pnl: float) -> bool:
         """
@@ -195,9 +202,10 @@ class Strategy1(BaseStrategy):
         if now.time() > datetime.time(hour=13, minute=30):
             # Shifting after 1:30 PM
             # When time passes 1:30 PM, remove previous registers and register new shifting
-            if second_shifting_register is not None:
-                PriceMonitor.deregister(second_shifting_register)
-                self._price_monitor_register = False
+            # if second_shifting_register is not None:
+            #     PriceMonitor.deregister(second_shifting_register)
+            #     self._price_monitor_register = False
+            # Unless the previous register is triggered, don't register any new trigger
             if not self._price_monitor_register:
                 logger.info(
                     f"Next shifting will be done when market moves above "
@@ -219,7 +227,7 @@ class Strategy1(BaseStrategy):
                     f"Next shifting will be done when market moves above "
                     f"{self._market_price + 45} or below {self._market_price - 45}"
                 )
-                second_shifting_register = PriceMonitor.register(
+                PriceMonitor.register(
                     symbol="NIFTY",
                     reference_price=self._market_price,
                     up_point=45,
@@ -232,7 +240,14 @@ class Strategy1(BaseStrategy):
     def shift_straddle(self):
         """ Shift straddle """
         self._market_price = self._price_monitor.get_nifty_value()
-        self._straddle_strike = self._price_monitor.get_atm_strike()
+        current_straddle_strike = self._price_monitor.get_atm_strike()
+        if current_straddle_strike == self._straddle_strike:
+            logger.info(
+                f"Skipping straddle shift as previous straddle strike and current straddle "
+                f"strike is same"
+            )
+            return None
+        self._straddle_strike = current_straddle_strike
         logger.info(f"Shifting straddle")
         logger.info(
             f"Previous straddle {self._straddle} entry price: "
@@ -252,6 +267,7 @@ class Strategy1(BaseStrategy):
         # If remaining lots are not traded, during shifting trade the remaining lot
         if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
             logger.info(f"Trading remaining lot during shifting")
+            self.buy_remaining_lot_hedging()
             self._lot_size += self.remaining_lot_size
             logger.info(f"Final lot size: {self._lot_size}")
             self._remaining_lot_traded = True
@@ -273,6 +289,8 @@ class Strategy1(BaseStrategy):
         logger.info(f"Shifting straddle to {self._straddle}")
         straddle_price = self.get_pair_instrument_entry_price(self._straddle)
         logger.info(f"Straddle price: {straddle_price}")
+        # Placing actual order
+        self.place_pair_instrument_order(self._straddle)
         if not self._first_shifting:
             # If it is first shifting, mark first shifting as True which will ensure code flow
             # for second shifting
@@ -281,63 +299,96 @@ class Strategy1(BaseStrategy):
         # we can register for new shifting
         self._price_monitor_register = False
 
-    def trade_remaining_lot(self):
+    def trade_remaining_lot(self) -> None:
         """
         Trade remaining lots if the initial straddle is same as current straddle else wait
         for next shifting
         """
         now = istnow()
-        logger.info(f"Trading remaining {self.remaining_lot_size} lot  at {now}")
+        logger.info(f"Trading remaining {self.remaining_lot_size} lot at {now}")
         current_market_price = self._price_monitor.get_nifty_value()
         current_straddle_strike = self._price_monitor.get_atm_strike()
         logger.info(f"Market price: {current_market_price}")
         logger.info(f"ATM strike: {current_straddle_strike}")
-        if current_straddle_strike == self._straddle_strike:
-            remaining_lot_straddle: PairInstrument = PairInstrument()
-            remaining_lot_straddle.ce_instrument = self.get_instrument(
-                strike=current_straddle_strike,
-                option_type="CE",
-                action=Action.SELL,
-                lot_size=self.remaining_lot_size,
-                entry=now
-            )
-            remaining_lot_straddle.pe_instrument = self.get_instrument(
-                strike=current_straddle_strike,
-                option_type="PE",
-                action=Action.SELL,
-                lot_size=self.remaining_lot_size,
-                entry=now
-            )
-            logger.info(f"Shorting straddle {remaining_lot_straddle}")
-            straddle_price = self.get_pair_instrument_entry_price(remaining_lot_straddle)
-            logger.info(f"Straddle price: {straddle_price}")
-            self.place_pair_instrument_order(remaining_lot_straddle)
-            remaining_lot_hedging: PairInstrument = PairInstrument()
-            remaining_lot_hedging.ce_instrument = self.get_instrument(
-                strike=self._hedging.ce_instrument.strike,
-                option_type="CE",
-                action=Action.BUY,
-                lot_size=self.remaining_lot_size,
-                entry=now
-            )
-            remaining_lot_hedging.pe_instrument = self.get_instrument(
-                strike=self._hedging.pe_instrument.strike,
-                option_type="PE",
-                action=Action.BUY,
-                lot_size=self.remaining_lot_size,
-                entry=now
-            )
-            logger.info(f"Hedging {remaining_lot_hedging}")
-            hedging_price = self.get_pair_instrument_entry_price(remaining_lot_hedging)
-            logger.info(f"Hedging price: {hedging_price}")
-            self.place_pair_instrument_order(remaining_lot_hedging)
-            self._lot_size += self.remaining_lot_size
-            self._remaining_lot_traded = True
-        else:
+        if current_straddle_strike != self._straddle_strike:
             logger.info(
                 f"Initial straddle strike {self._straddle_strike} and current straddle strike "
                 f"{current_straddle_strike} are not same. Skipping trading remaining lots."
             )
+            return None
+
+        remaining_lot_hedging: PairInstrument = PairInstrument()
+        remaining_lot_hedging.ce_instrument = self.get_instrument(
+            strike=self._hedging.ce_instrument.strike,
+            option_type="CE",
+            action=Action.BUY,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        remaining_lot_hedging.pe_instrument = self.get_instrument(
+            strike=self._hedging.pe_instrument.strike,
+            option_type="PE",
+            action=Action.BUY,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        logger.info(f"Hedging {remaining_lot_hedging}")
+        hedging_price = self.get_pair_instrument_entry_price(remaining_lot_hedging)
+        logger.info(f"Hedging price: {hedging_price}")
+        self.place_pair_instrument_order(remaining_lot_hedging)
+
+        remaining_lot_straddle: PairInstrument = PairInstrument()
+        remaining_lot_straddle.ce_instrument = self.get_instrument(
+            strike=self._straddle_strike,
+            option_type="CE",
+            action=Action.SELL,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        remaining_lot_straddle.pe_instrument = self.get_instrument(
+            strike=self._straddle_strike,
+            option_type="PE",
+            action=Action.SELL,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        logger.info(f"Shorting straddle {remaining_lot_straddle}")
+        straddle_price = self.get_pair_instrument_entry_price(remaining_lot_straddle)
+        logger.info(f"Straddle price: {straddle_price}")
+        self.place_pair_instrument_order(remaining_lot_straddle)
+        # Update the total lot size
+        self._lot_size += self.remaining_lot_size
+        # Update lot size for straddle
+        self._straddle.ce_instrument.lot_size = self._lot_size
+        self._straddle.pe_instrument.lot_size = self._lot_size
+        # Update lot size for hedging
+        self._hedging.ce_instrument.lot_size = self._lot_size
+        self._hedging.pe_instrument.lot_size = self._lot_size
+        self._remaining_lot_traded = True
+
+    def buy_remaining_lot_hedging(self):
+        """ Buy remaining lot hedging while we add remaining lot during straddle shifting """
+        now = istnow()
+        logger.info(f"Buying remaining {self.remaining_lot_size} lot hedging at {now}")
+        remaining_lot_hedging: PairInstrument = PairInstrument()
+        remaining_lot_hedging.ce_instrument = self.get_instrument(
+            strike=self._hedging.ce_instrument.strike,
+            option_type="CE",
+            action=Action.BUY,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        remaining_lot_hedging.pe_instrument = self.get_instrument(
+            strike=self._hedging.pe_instrument.strike,
+            option_type="PE",
+            action=Action.BUY,
+            lot_size=self.remaining_lot_size,
+            entry=now
+        )
+        logger.info(f"Hedging {remaining_lot_hedging}")
+        hedging_price = self.get_pair_instrument_entry_price(remaining_lot_hedging)
+        logger.info(f"Hedging price: {hedging_price}")
+        self.place_pair_instrument_order(remaining_lot_hedging)
 
     def get_instrument(
             self,
@@ -441,7 +492,7 @@ class Strategy1(BaseStrategy):
         """ Make API call to get initial capital in the account """
         if self._initial_capital is None:
             # API Call
-            self._initial_capital = 1000000
+            self._initial_capital = self.get_initial_capital()
         return self._initial_capital
 
     @property
@@ -457,7 +508,7 @@ class Strategy1(BaseStrategy):
     @property
     def actual_margin_per_lot(self) -> float:
         """ MAke API call to get actual margin used and divide it by initial lot """
-        margin_used = 600000    # Get this using API call
+        margin_used = self.get_used_margin()    # Get this using API call
         return round(margin_used / self.initial_lot_size, 2)
 
     @property
