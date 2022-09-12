@@ -141,7 +141,8 @@ class Strategy1(BaseStrategy):
                 self.exit()
                 break
             if self._entry_taken:
-                if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
+                if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded and \
+                        self.remaining_lot_size > 0:
                     self.trade_remaining_lot()
                 if not self._first_shifting:
                     # Logic for first shifting
@@ -275,7 +276,8 @@ class Strategy1(BaseStrategy):
         logger.info(f"ATM strike: {self._straddle_strike}")
         now = istnow()
         # If remaining lots are not traded, during shifting trade the remaining lot
-        if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded:
+        if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded and \
+                self.remaining_lot_size > 0:
             logger.info(f"Trading remaining {self.remaining_lot_size} lot during shifting")
             self._lot_size += self.remaining_lot_size
             self.buy_remaining_lot_hedging()
