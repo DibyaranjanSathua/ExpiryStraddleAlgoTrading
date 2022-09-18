@@ -12,6 +12,8 @@ from src.strategies.base_strategy import BaseStrategy
 from src.utils import utc2ist, istnow, make_ist_aware
 from src.strategies.instrument import Instrument, PairInstrument, Action
 from src.price_monitor.price_monitor import PriceMonitor, PriceRegister
+from src.utils.enum import Weekdays
+from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
 
 
@@ -22,24 +24,25 @@ class Strategy1(BaseStrategy):
     """ Expiry day strategy for shorting straddle """
     STRATEGY_CODE: str = "strategy1"
     QUANTITY: int = 50
-    SL_PERCENT: float = 1.25
-    TARGET_PERCENT: float = 2.5
 
-    def __init__(self, price_monitor: PriceMonitor, dry_run: bool = False):
+    def __init__(self, price_monitor: PriceMonitor, config: ConfigReader, dry_run: bool = False):
         super(Strategy1, self).__init__(dry_run=dry_run)
         if dry_run:
             logger.info(f"Executing in dry-run mode")
         self._straddle: PairInstrument = PairInstrument()
         self._hedging: PairInstrument = PairInstrument()
         self._price_monitor: PriceMonitor = price_monitor
+        self._config: ConfigReader = config
         self._pnl: float = 0
         self._first_shifting: bool = False      # Indicate if first shifting is done
         self._straddle_strike: int = 0
         self._market_price: float = 0
+        self._weekday: Optional[Weekdays] = None
         # At any point we should register once
         self._price_monitor_register: bool = False
         self._entry_taken: bool = False
         self._entry_time: Optional[datetime.datetime] = None
+        self._changed_entry_time: Optional[datetime.time] = None
         self._sl: Optional[float] = None
         self._target: Optional[float] = None
         self._initial_capital: Optional[float] = None
@@ -59,8 +62,12 @@ class Strategy1(BaseStrategy):
         self._lot_size = self.initial_lot_size
         logger.info(f"Initial lot size: {self._lot_size}")
         # Buy hedging
-        ce_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="CE")
-        pe_buy_strike = self._price_monitor.get_strike_by_price(price=5, option_type="PE")
+        ce_buy_strike = self._price_monitor.get_strike_by_price(
+            price=self.ce_buy_price, option_type="CE"
+        )
+        pe_buy_strike = self._price_monitor.get_strike_by_price(
+            price=self.pe_buy_price, option_type="PE"
+        )
         self._hedging.ce_instrument = self.get_instrument(
             strike=ce_buy_strike,
             option_type="CE",
@@ -131,13 +138,29 @@ class Strategy1(BaseStrategy):
         """ Execute the strategy """
         logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
         super(Strategy1, self).execute()
+        now = istnow()
+        self._weekday = Weekdays(now.weekday())
+        logger.info(f"Trading day: {self._weekday.name}")
         logger.info(f"Initial Capital: {self.initial_capital}")
         logger.info(f"Capital to trade: {self.capital_to_trade}")
+        logger.info(f"SL percent: {self.sl_percent}")
+        logger.info(f"Target percent: {self.target_percent}")
+        logger.info(f"Expected margin per lot: {self.expected_margin_per_lot}")
         while True:
             now = istnow()
-            if self.entry_time(now) and not self._entry_taken:
-                self.entry()
-            if self.exit_time(now):
+            if self.check_entry_time(now) and not self._entry_taken:
+                # For Thursday check if straddle price is in between 70 and 110
+                if self._weekday == Weekdays.THURSDAY and self._changed_entry_time is None:
+                    straddle_price = self.get_current_straddle_price()
+                    if 70 <= straddle_price <= 110:
+                        self.entry()
+                    else:
+                        logger.info(f"Straddle price {straddle_price} is outside range 70 - 110.")
+                        self._changed_entry_time = datetime.time(hour=10, minute=20)
+                        logger.info(f"Changing the entry time to {self._changed_entry_time}")
+                else:
+                    self.entry()
+            if self.check_exit_time(now):
                 self.exit()
                 break
             if self._entry_taken:
@@ -150,6 +173,8 @@ class Strategy1(BaseStrategy):
                 else:
                     # Second shifting onwards
                     self.second_shifting_registration()
+                if self._config["option_buying_shifting"][self._weekday.name.lower()]:
+                    self.shift_hedging()
                 pnl = self.get_strategy_pnl()
                 logger.info(f"Lot traded: {self._lot_size}")
                 logger.info(f"Strategy PnL: {pnl}")
@@ -203,8 +228,8 @@ class Strategy1(BaseStrategy):
     def second_shifting_registration(self):
         """ Straddle second shifting onwards """
         now = istnow()
-        second_shifting_register: Optional[PriceRegister] = None
-        if now.time() > datetime.time(hour=13, minute=30):
+        if now.time() > datetime.time(hour=13, minute=30) and self._weekday == Weekdays.THURSDAY:
+            # This is only applicable for Thursday
             # Shifting after 1:30 PM
             # When time passes 1:30 PM, remove previous registers and register new shifting
             # if second_shifting_register is not None:
@@ -310,6 +335,49 @@ class Strategy1(BaseStrategy):
         # Once this function is triggered, we can reset self._price_monitor_register so that
         # we can register for new shifting
         self._price_monitor_register = False
+
+    def shift_hedging(self):
+        """ Shift hedging close to Rs 5 """
+        # Buy hedging
+        ce_buy_strike = self._price_monitor.get_strike_by_price(
+            price=self.ce_buy_price, option_type="CE"
+        )
+        pe_buy_strike = self._price_monitor.get_strike_by_price(
+            price=self.pe_buy_price, option_type="PE"
+        )
+        if ce_buy_strike == self._hedging.ce_instrument.strike and \
+                pe_buy_strike == self._hedging.pe_instrument:
+            # If both PE and CE strikes are same, don't shift the hedging
+            logger.info(
+                f"Current CE and PE strike is same as hedging CE and PE strike. "
+                f"Skipping shifting of hedges."
+            )
+            return None
+        logger.info(f"Shifting hedges")
+        logger.info(f"Squaring off hedges {self._hedging}")
+        now = istnow()
+        self._hedging.ce_instrument.action = Action.SELL
+        self._hedging.pe_instrument.action = Action.SELL
+        self.place_pair_instrument_order(self._hedging)
+        # Buying new hedges
+        self._hedging.ce_instrument = self.get_instrument(
+            strike=ce_buy_strike,
+            option_type="CE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=now
+        )
+        self._hedging.pe_instrument = self.get_instrument(
+            strike=pe_buy_strike,
+            option_type="PE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=now
+        )
+        logger.info(f"Shifting hedging to {self._hedging}")
+        hedging_price = self.get_pair_instrument_entry_price(self._hedging)
+        logger.info(f"Hedging price: {hedging_price}")
+        self.place_pair_instrument_order(self._hedging)
 
     def trade_remaining_lot(self) -> None:
         """
@@ -461,17 +529,13 @@ class Strategy1(BaseStrategy):
             pnl *= -1
         return round(pnl, 2)
 
-    @staticmethod
-    def entry_time(dt: datetime.datetime) -> bool:
+    def check_entry_time(self, dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time. Entry time is 9:50 AM """
-        start_time = datetime.time(hour=9, minute=50)
-        return dt.time() > start_time
+        return dt.time() > self.entry_time
 
-    @staticmethod
-    def exit_time(dt: datetime.datetime) -> bool:
+    def check_exit_time(self, dt: datetime.datetime) -> bool:
         """ Return True if the time is more than exit time. Exit time is 3:00 PM """
-        end_time = datetime.time(hour=15, minute=10)
-        return dt.time() > end_time
+        return dt.time() > self.exit_time
 
     def time_to_trade_remaining_lot(self, dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time + 25 mins else False """
@@ -493,16 +557,63 @@ class Strategy1(BaseStrategy):
         )
         return round(price, 2)
 
+    def get_current_straddle_price(self) -> float:
+        """ Get the current straddle price """
+        straddle_strike = self._price_monitor.get_atm_strike()
+        straddle: PairInstrument = PairInstrument()
+        straddle.ce_instrument = self.get_instrument(
+            strike=straddle_strike,
+            option_type="CE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
+        )
+        straddle.pe_instrument = self.get_instrument(
+            strike=straddle_strike,
+            option_type="PE",
+            action=Action.SELL,
+            lot_size=self._lot_size,
+            entry=self._entry_time
+        )
+        straddle_price = self.get_pair_instrument_entry_price(self._straddle)
+        return straddle_price
+
+    @property
+    def sl_percent(self) -> float:
+        return float(self._config["stop_loss"][self._weekday.name.lower()])
+
+    @property
+    def target_percent(self) -> float:
+        return float(self._config["target"][self._weekday.name.lower()])
+
+    @property
+    def ce_buy_price(self) -> float:
+        return float(self._config["option_buying"][self._weekday.name.lower()]["CE"])
+
+    @property
+    def pe_buy_price(self) -> float:
+        return float(self._config["option_buying"][self._weekday.name.lower()]["PE"])
+
+    @property
+    def entry_time(self) -> datetime.time:
+        if self._changed_entry_time is None:
+            return self._config["entry_time"][self._weekday.name.lower()]
+        return self._changed_entry_time
+
+    @property
+    def exit_time(self) -> datetime.time:
+        return self._config["exit_time"][self._weekday.name.lower()]
+
     @property
     def sl(self) -> float:
         if self._sl is None:
-            self._sl = self.SL_PERCENT * self.initial_capital / 100
+            self._sl = self.sl_percent * self.initial_capital / 100
         return self._sl * -1
 
     @property
     def target(self) -> float:
         if self._target is None:
-            self._target = self.TARGET_PERCENT * self.initial_capital / 100
+            self._target = self.target_percent * self.initial_capital / 100
         return self._target
 
     @property
@@ -521,7 +632,7 @@ class Strategy1(BaseStrategy):
     @property
     def expected_margin_per_lot(self) -> float:
         """ A rough estimate for margin per lot """
-        return 50000
+        return self._config["margin"][self._weekday.name.lower()]
 
     @property
     def actual_margin_per_lot(self) -> float:
@@ -549,8 +660,11 @@ class Strategy1(BaseStrategy):
 
 
 if __name__ == "__main__":
+    from src import BASE_DIR
     price_monitor = PriceMonitor()
     price_monitor.setup()
     price_monitor.run_in_background()
-    strategy = Strategy1(price_monitor=price_monitor, dry_run=True)
+    config_path = BASE_DIR / 'data' / 'config.json'
+    config = ConfigReader(config_file_path=config_path)
+    strategy = Strategy1(price_monitor=price_monitor, config=config, dry_run=True)
     strategy.execute()

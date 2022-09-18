@@ -12,12 +12,29 @@ from src.brokerapi.angelbroking import AngelBrokingApi, AngelBrokingSymbolParser
 
 class MarketFeeds:
     """ Store the live market feeds in redis db """
-    def __init__(self, api_key: str, client_id: str, password: str):
+    def __init__(
+            self,
+            api_key: str,
+            client_id: str,
+            password: str,
+            symbol_parser: AngelBrokingSymbolParser,
+            only_ce_or_pe: bool = True,
+            option_type: str = "CE"
+    ):
         self._api_key = api_key
         self._client_id = client_id
         self._password = password
+        # When only one broker account is used, we will fetch 25 CE strikes and 25 PE strikes
+        # If 2 broker account is used, we will fetch 50 CE strikes from one account and
+        # 50 PE strikes from the other account.
+        # When only_ce_or_pe is True, we will only fetch either 50 CE strikes or 50 PE strikes
+        # depending on option_type.
+        # If only_ce_or_pe is False, we will fetch both CE and PE strikes and option_type argument
+        # is ignored.
+        self._only_ce_or_pe = only_ce_or_pe
+        self._option_type = option_type
         self._api = AngelBrokingApi(api_key=api_key, client_id=client_id, password=password)
-        self._symbol_parser: Optional[AngelBrokingSymbolParser] = None
+        self._symbol_parser = symbol_parser
         self._option_tokens = []        # Stores the token for subscribing for web socket data
         self._token_symbol_mapper = TokenSymbolMapper()
 
@@ -26,25 +43,35 @@ class MarketFeeds:
         self._api.login()
         # Just to check if login is successful, fetch user profile
         self._api.get_user_profile()
-        self._symbol_parser = AngelBrokingSymbolParser.instance()
         # Get the nifty ltp to determine the ATM price
         data = self._api.get_ltp_data(
             trading_symbol="NIFTY",
             symbol_token=self._symbol_parser.nifty_index_token,
-            exhange="NSE"
+            exchange="NSE"
         )
         # Added nifty index to token to symbol mapper
         self._token_symbol_mapper[self._symbol_parser.nifty_index_token] = "NIFTY"
         nifty_index = data["ltp"]
         atm = self.get_nearest_50_strike(nifty_index)
-        ce_strikes = [atm + (50 * x) for x in range(15)]    # 15 CE strikes (ATM + OTM)
-        ce_strikes += [atm - (50 * x) for x in range(1, 10)]  # 10 CE strikes ITM
-        pe_strikes = [atm - (50 * x) for x in range(15)]    # 15 PE strikes (ATM + OTM)
-        pe_strikes += [atm + (50 * x) for x in range(1, 10)]    # 10 PE strikes ITM
+        pe_strikes = None
+        ce_strikes = None
+        if self._only_ce_or_pe:
+            # From one account we get fetch 50 CE strikes and other account 50 PE strikes
+            if self._option_type == "CE":
+                ce_strikes = [atm + (50 * x) for x in range(30)]  # 30 CE strikes (ATM + OTM)
+                ce_strikes += [atm - (50 * x) for x in range(1, 20)]  # 20 CE strikes ITM
+            else:
+                pe_strikes = [atm - (50 * x) for x in range(30)]  # 35 PE strikes (ATM + OTM)
+                pe_strikes += [atm + (50 * x) for x in range(1, 20)]  # 20 PE strikes ITM
+        else:
+            ce_strikes = [atm + (50 * x) for x in range(15)]    # 15 CE strikes (ATM + OTM)
+            ce_strikes += [atm - (50 * x) for x in range(1, 10)]  # 10 CE strikes ITM
+            pe_strikes = [atm - (50 * x) for x in range(15)]    # 15 PE strikes (ATM + OTM)
+            pe_strikes += [atm + (50 * x) for x in range(1, 10)]    # 10 PE strikes ITM
         # Get the current expiry
         current_expiry = self._symbol_parser.current_week_expiry
         self._option_tokens = self.get_option_tokens(
-            ce_strikes=ce_strikes, pe_strikes=pe_strikes, expiry=current_expiry
+            expiry=current_expiry, ce_strikes=ce_strikes, pe_strikes=pe_strikes
         )
         # Setup market feed
         self._api.setup_market_feeds()
@@ -52,11 +79,17 @@ class MarketFeeds:
         self._api.market_feeds.index_tokens = [self._symbol_parser.nifty_index_token]
         self._api.market_feeds.connect()
 
-    def get_option_tokens(self, ce_strikes: List, pe_strikes: List, expiry: datetime.date):
+    def get_option_tokens(
+            self,
+            expiry: datetime.date,
+            *,
+            ce_strikes: Optional[List] = None,
+            pe_strikes: Optional[List] = None
+    ):
         """ Get the option tokens for ce_strikes and pe_strikes """
         option_tokens = []
         date_str = expiry.strftime("%d%b%y").upper()
-        for strike in ce_strikes:
+        for strike in ce_strikes or []:
             data = self._symbol_parser.get_symbol_data(
                 ticker="NIFTY",
                 strike=strike,
@@ -67,7 +100,7 @@ class MarketFeeds:
                 option_tokens.append(data['token'])
                 self._token_symbol_mapper[data['token']] = f"NIFTY{date_str}{strike}CE"
 
-        for strike in pe_strikes:
+        for strike in pe_strikes or []:
             data = self._symbol_parser.get_symbol_data(
                 ticker="NIFTY",
                 strike=strike,
@@ -86,14 +119,44 @@ class MarketFeeds:
 
 
 if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
+    import threading
     from src import BASE_DIR
-    dotenv_path = BASE_DIR / 'env' / '.env'
-    load_dotenv(dotenv_path=dotenv_path)
-    api_key = os.environ.get("ANGEL_BROKING_API_KEY")
-    client_id = os.environ.get("ANGEL_BROKING_CLIENT_ID")
-    password = os.environ.get("ANGEL_BROKING_PASSWORD")
-    market_feeds = MarketFeeds(api_key=api_key, client_id=client_id, password=password)
-    market_feeds.setup()
-
+    from src.utils.config_reader import ConfigReader
+    config_path = BASE_DIR / 'data' / 'config.json'
+    config = ConfigReader(config_file_path=config_path)
+    market_feeds_accounts = config["market_feeds"]["accounts"]
+    symbol_parser = AngelBrokingSymbolParser.instance()
+    if len(market_feeds_accounts) > 1:
+        print(f"Setting up market feeds for CE strikes")
+        account = market_feeds_accounts.pop()
+        market_feeds = MarketFeeds(
+            api_key=account["api_key"],
+            client_id=account["client_id"],
+            password=account["password"],
+            symbol_parser=symbol_parser,
+            only_ce_or_pe=True,
+            option_type="CE"
+        )
+        threading.Thread(target=market_feeds.setup).start()
+        print(f"Setting up market feeds for PE strikes")
+        account = market_feeds_accounts.pop()
+        market_feeds = MarketFeeds(
+            api_key=account["api_key"],
+            client_id=account["client_id"],
+            password=account["password"],
+            symbol_parser=symbol_parser,
+            only_ce_or_pe=True,
+            option_type="PE"
+        )
+        threading.Thread(target=market_feeds.setup).start()
+    else:
+        print(f"Setting up market feeds for both CE or PE strikes")
+        account = market_feeds_accounts.pop()
+        market_feeds = MarketFeeds(
+            api_key=account["api_key"],
+            client_id=account["client_id"],
+            password=account["password"],
+            symbol_parser=symbol_parser,
+            only_ce_or_pe=False,
+        )
+        market_feeds.setup()

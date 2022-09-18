@@ -108,14 +108,15 @@ class AngelBrokingApi(BaseApi):
         assert 'data' in response, "data attribute is missing in SmartAPI"
         return response["data"]
 
-    def get_ltp_data(self, trading_symbol: str, symbol_token: str, exhange: str = "NSE"):
+    def get_ltp_data(self, trading_symbol: str, symbol_token: str, exchange: str = "NSE"):
         """ Get the LTP data for trading symbol and symbol token """
         response = self._smart_connect.ltpData(
-            exchange=exhange, tradingsymbol=trading_symbol, symboltoken=symbol_token
+            exchange=exchange, tradingsymbol=trading_symbol, symboltoken=symbol_token
         )
         if not response['status']:
             raise BrokerApiError(
-                f"Error getting funds and margin for AngelBroking API. {response['message']}"
+                f"Error getting lpt data for trading symbol {trading_symbol} with symbol_token "
+                f"{symbol_token}. {response['message']}"
             )
         assert 'data' in response, "data attribute is missing in SmartAPI"
         return response["data"]
