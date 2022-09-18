@@ -1,0 +1,84 @@
+{
+  "market_feeds": {
+    "accounts": [
+      {
+        "api_key": "XXXXXX",
+        "client_id": "XXXXXX",
+        "password": "XXXXXX"
+      },
+      {
+        "api_key": "XXXXXX",
+        "client_id": "XXXXXX",
+        "password": "XXXXXX"
+      }
+    ]
+  },
+  "strategies": {
+    "strategy1": {
+      "stop_loss": {
+        "monday": 0.25,
+        "tuesday": 0.75,
+        "wednesday": 0.85,
+        "thursday": 1.25,
+        "friday": 0.75
+      },
+      "target": {
+        "monday": 0.9,
+        "tuesday": 0.9,
+        "wednesday": 1.1,
+        "thursday": 2.5,
+        "friday": 0.85
+      },
+      "margin": {
+        "monday": 70000,
+        "tuesday": 65000,
+        "wednesday": 65000,
+        "thursday": 50000,
+        "friday": 70000
+      },
+      "option_buying": {
+        "monday": {
+          "CE": 5,
+          "PE": 5
+        },
+        "tuesday": {
+          "CE": 5,
+          "PE": 5
+        },
+        "wednesday": {
+          "CE": 5,
+          "PE": 5
+        },
+        "thursday": {
+          "CE": 5,
+          "PE": 5
+        },
+        "friday": {
+          "CE": 5,
+          "PE": 5
+        }
+      },
+      "option_buying_shifting": {
+        "monday": false,
+        "tuesday": false,
+        "wednesday": false,
+        "thursday": true,
+        "friday": false
+      },
+      "entry_time": {
+        "monday": "9:50",
+        "tuesday": "10:10",
+        "wednesday": "10:10",
+        "thursday": "10:10",
+        "friday": "10:10"
+      },
+      "exit_time": {
+        "monday": "15:10",
+        "tuesday": "15:10",
+        "wednesday": "15:10",
+        "thursday": "15:10",
+        "friday": "15:10"
+      }
+    }
+  }
+}
