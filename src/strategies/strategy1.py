@@ -354,30 +354,33 @@ class Strategy1(BaseStrategy):
             )
             return None
         logger.info(f"Shifting hedges")
-        logger.info(f"Squaring off hedges {self._hedging}")
         now = istnow()
-        self._hedging.ce_instrument.action = Action.SELL
-        self._hedging.pe_instrument.action = Action.SELL
-        self.place_pair_instrument_order(self._hedging)
+        new_hedging: PairInstrument = PairInstrument()
         # Buying new hedges
-        self._hedging.ce_instrument = self.get_instrument(
+        new_hedging.ce_instrument = self.get_instrument(
             strike=ce_buy_strike,
             option_type="CE",
             action=Action.BUY,
             lot_size=self._lot_size,
             entry=now
         )
-        self._hedging.pe_instrument = self.get_instrument(
+        new_hedging.pe_instrument = self.get_instrument(
             strike=pe_buy_strike,
             option_type="PE",
             action=Action.BUY,
             lot_size=self._lot_size,
             entry=now
         )
-        logger.info(f"Shifting hedging to {self._hedging}")
-        hedging_price = self.get_pair_instrument_entry_price(self._hedging)
+        logger.info(f"Shifting hedging to {new_hedging}")
+        hedging_price = self.get_pair_instrument_entry_price(new_hedging)
         logger.info(f"Hedging price: {hedging_price}")
         self.place_pair_instrument_order(self._hedging)
+        # Squaring off previous hedges
+        logger.info(f"Squaring off hedges {self._hedging}")
+        self._hedging.ce_instrument.action = Action.SELL
+        self._hedging.pe_instrument.action = Action.SELL
+        self.place_pair_instrument_order(self._hedging)
+        self._hedging = new_hedging
 
     def trade_remaining_lot(self) -> None:
         """
