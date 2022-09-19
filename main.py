@@ -85,13 +85,13 @@ def main():
             run_strategy1(dry_run=args.dry_run)
         except Exception as err:
             trading_logger.error(err)
-            trading_logger.error(traceback.print_exc())
+            trading_logger.exception(traceback.print_exc())
     if args.market_feeds:
         try:
             run_market_feed()
         except Exception as err:
             market_feed_logger.error(err)
-            market_feed_logger.error(traceback.print_exc())
+            market_feed_logger.exception(traceback.print_exc())
 
 
 if __name__ == "__main__":

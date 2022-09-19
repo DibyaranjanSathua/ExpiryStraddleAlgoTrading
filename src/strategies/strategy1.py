@@ -27,7 +27,8 @@ class Strategy1(BaseStrategy):
 
     def __init__(self, price_monitor: PriceMonitor, config: ConfigReader, dry_run: bool = False):
         super(Strategy1, self).__init__(dry_run=dry_run)
-        if dry_run:
+        self._dry_run: bool = dry_run
+        if self._dry_run:
             logger.info(f"Executing in dry-run mode")
         self._straddle: PairInstrument = PairInstrument()
         self._hedging: PairInstrument = PairInstrument()
@@ -624,7 +625,10 @@ class Strategy1(BaseStrategy):
         """ Make API call to get initial capital in the account """
         if self._initial_capital is None:
             # API Call
-            self._initial_capital = self.get_initial_capital()
+            if self._dry_run:
+                self._initial_capital = self._config["dry_run"]["initial_capital"]
+            else:
+                self._initial_capital = self.get_initial_capital()
         return self._initial_capital
 
     @property
@@ -641,8 +645,11 @@ class Strategy1(BaseStrategy):
     def actual_margin_per_lot(self) -> float:
         """ MAke API call to get actual margin used and divide it by initial lot """
         if self._actual_margin_per_lot is None:
-            margin_used = self.get_used_margin()    # Get this using API call
-            self._actual_margin_per_lot = round(margin_used / self.initial_lot_size, 2)
+            if self._dry_run:
+                self._actual_margin_per_lot = self._config["dry_run"]["actual_margin_per_lot"]
+            else:
+                margin_used = self.get_used_margin()    # Get this using API call
+                self._actual_margin_per_lot = round(margin_used / self.initial_lot_size, 2)
             logger.info(f"Actual margin per lot: {self._actual_margin_per_lot}")
         return self._actual_margin_per_lot
 

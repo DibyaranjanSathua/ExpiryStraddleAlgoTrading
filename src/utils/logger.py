@@ -58,3 +58,6 @@ class LogFacade:
 
     def critical(self, msg):
         self._logger.critical(msg)
+
+    def exception(self, msg):
+        self._logger.exception(msg)
