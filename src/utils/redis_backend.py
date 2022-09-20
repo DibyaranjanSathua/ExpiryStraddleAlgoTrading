@@ -25,10 +25,8 @@ class RedisBackend:
         self._port: int = int(os.environ.get("REDIS_PORT", 6379))
         self._redis: Optional[redis.Redis] = None
 
-    def connect(self, cleanup: bool = True) -> None:
+    def connect(self) -> None:
         self._redis = redis.Redis(host=self._host, port=self._port)
-        if cleanup:
-            self.cleanup()
 
     def set(self, key: str, data: Dict) -> None:
         data_str = json.dumps(data)
@@ -52,7 +50,7 @@ class RedisBackend:
 
 if __name__ == "__main__":
     obj = RedisBackend()
-    obj.connect(cleanup=False)
+    obj.connect()
     data = {"token": "12345", "ltp": 123}
     obj.set("NIFTY25AUG2217000CE", data)
     value = obj.get("NIFTY25AUG2217000CE")

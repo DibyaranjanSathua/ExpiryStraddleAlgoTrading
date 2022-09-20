@@ -12,6 +12,7 @@ from src.market_feeds.market_feeds import MarketFeeds
 from src.strategies.strategy1 import Strategy1
 from src.price_monitor.price_monitor import PriceMonitor
 from src.brokerapi.angelbroking import AngelBrokingSymbolParser
+from src.utils.redis_backend import RedisBackend
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
 
@@ -26,6 +27,10 @@ def run_market_feed():
     """ Run market feed """
     market_feeds_accounts = config["market_feeds"]["accounts"]
     symbol_parser = AngelBrokingSymbolParser.instance()
+    # Connect to redis and clean up all nifty keys so that we don't end up using some old keys
+    redis_backend = RedisBackend()
+    redis_backend.connect()
+    redis_backend.cleanup(pattern="NIFTY*")
     if len(market_feeds_accounts) > 1:
         market_feed_logger.info(f"Setting up market feeds for CE strikes")
         account = market_feeds_accounts.pop()
