@@ -634,7 +634,8 @@ class Strategy1(BaseStrategy):
     @property
     def capital_to_trade(self) -> float:
         """ Calculate capital to trade which is 95% of initial capital """
-        return 0.95 * self.initial_capital
+        return self._config["capital_to_trade_percent"][self._weekday.name.lower()] * \
+               self.initial_capital
 
     @property
     def expected_margin_per_lot(self) -> float:
