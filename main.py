@@ -3,9 +3,9 @@ File:           main.py
 Author:         Dibyaranjan Sathua
 Created on:     29/08/22, 1:31 am
 """
+from typing import Optional
 import argparse
 import traceback
-import threading
 
 from src import BASE_DIR
 from src.market_feeds.market_feeds import MarketFeeds
@@ -23,46 +23,39 @@ config_path = BASE_DIR / 'data' / 'config.json'
 config = ConfigReader(config_file_path=config_path)
 
 
-def run_market_feed():
-    """ Run market feed """
-    market_feeds_accounts = config["market_feeds"]["accounts"]
-    symbol_parser = AngelBrokingSymbolParser.instance()
+def clean_up():
+    """ Perform clean up tasks """
     # Connect to redis and clean up all nifty keys so that we don't end up using some old keys
     redis_backend = RedisBackend()
     redis_backend.connect()
     redis_backend.cleanup(pattern="NIFTY*")
-    if len(market_feeds_accounts) > 1:
-        market_feed_logger.info(f"Setting up market feeds for CE strikes")
-        account = market_feeds_accounts.pop()
-        market_feeds = MarketFeeds(
-            api_key=account["api_key"],
-            client_id=account["client_id"],
-            password=account["password"],
-            symbol_parser=symbol_parser,
-            only_ce_or_pe=True,
-            option_type="CE"
-        )
-        threading.Thread(target=market_feeds.setup).start()
-        market_feed_logger.info(f"Setting up market feeds for PE strikes")
-        account = market_feeds_accounts.pop()
-        market_feeds = MarketFeeds(
-            api_key=account["api_key"],
-            client_id=account["client_id"],
-            password=account["password"],
-            symbol_parser=symbol_parser,
-            only_ce_or_pe=True,
-            option_type="PE"
-        )
-        threading.Thread(target=market_feeds.setup).start()
-    else:
+
+
+def run_market_feed(option_type: Optional[str] = None):
+    """ Run market feed """
+    market_feeds_accounts = config["market_feeds"]
+    symbol_parser = AngelBrokingSymbolParser.instance()
+    if option_type is None:
         market_feed_logger.info(f"Setting up market feeds for both CE or PE strikes")
-        account = market_feeds_accounts.pop()
+        account = market_feeds_accounts["CE"]
         market_feeds = MarketFeeds(
             api_key=account["api_key"],
             client_id=account["client_id"],
             password=account["password"],
             symbol_parser=symbol_parser,
             only_ce_or_pe=False,
+        )
+        market_feeds.setup()
+    else:
+        market_feed_logger.info(f"Setting up market feeds for {option_type} strikes")
+        account = market_feeds_accounts[option_type]
+        market_feeds = MarketFeeds(
+            api_key=account["api_key"],
+            client_id=account["client_id"],
+            password=account["password"],
+            symbol_parser=symbol_parser,
+            only_ce_or_pe=True,
+            option_type=option_type
         )
         market_feeds.setup()
 
@@ -84,6 +77,7 @@ def main():
     parser.add_argument("--trading", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--clean-up", action="store_true")
+    parser.add_argument("--option-type", type=str, help="Use for market feeds to get strike data")
     args = parser.parse_args()
     if args.trading:
         try:
@@ -93,10 +87,13 @@ def main():
             trading_logger.exception(traceback.print_exc())
     if args.market_feeds:
         try:
-            run_market_feed()
+            run_market_feed(args.option_type)
         except Exception as err:
             market_feed_logger.error(err)
             market_feed_logger.exception(traceback.print_exc())
+
+    if args.clean_up:
+        clean_up()
 
 
 if __name__ == "__main__":

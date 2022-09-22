@@ -218,14 +218,15 @@ class AngelBrokingMarketFeed:
         self.subscribe()
 
     def on_open(self, ws):
-        print("On open")
+        print("On Open")
         self.subscribe()
 
     def on_error(self, ws, error):
+        print("On Error")
         print(error)
 
     def on_close(self, ws):
-        print("Close")
+        print("On Close")
 
     def parse_save(self, message) -> None:
         """ Parse the market websocket message and save it to redis backend """

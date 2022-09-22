@@ -119,44 +119,21 @@ class MarketFeeds:
 
 
 if __name__ == "__main__":
-    import threading
     from src import BASE_DIR
     from src.utils.config_reader import ConfigReader
     config_path = BASE_DIR / 'data' / 'config.json'
     config = ConfigReader(config_file_path=config_path)
-    market_feeds_accounts = config["market_feeds"]["accounts"]
+    market_feeds_accounts = config["market_feeds"]
     symbol_parser = AngelBrokingSymbolParser.instance()
-    if len(market_feeds_accounts) > 1:
-        print(f"Setting up market feeds for CE strikes")
-        account = market_feeds_accounts.pop()
-        market_feeds = MarketFeeds(
-            api_key=account["api_key"],
-            client_id=account["client_id"],
-            password=account["password"],
-            symbol_parser=symbol_parser,
-            only_ce_or_pe=True,
-            option_type="CE"
-        )
-        threading.Thread(target=market_feeds.setup).start()
-        print(f"Setting up market feeds for PE strikes")
-        account = market_feeds_accounts.pop()
-        market_feeds = MarketFeeds(
-            api_key=account["api_key"],
-            client_id=account["client_id"],
-            password=account["password"],
-            symbol_parser=symbol_parser,
-            only_ce_or_pe=True,
-            option_type="PE"
-        )
-        threading.Thread(target=market_feeds.setup).start()
-    else:
-        print(f"Setting up market feeds for both CE or PE strikes")
-        account = market_feeds_accounts.pop()
-        market_feeds = MarketFeeds(
-            api_key=account["api_key"],
-            client_id=account["client_id"],
-            password=account["password"],
-            symbol_parser=symbol_parser,
-            only_ce_or_pe=False,
-        )
-        market_feeds.setup()
+    option_type = "CE"
+    account = market_feeds_accounts[option_type]
+    market_feeds = MarketFeeds(
+        api_key=account["api_key"],
+        client_id=account["client_id"],
+        password=account["password"],
+        symbol_parser=symbol_parser,
+        only_ce_or_pe=True,
+        option_type=option_type
+    )
+    market_feeds.setup()
+
