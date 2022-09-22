@@ -119,7 +119,7 @@ class PriceMonitor:
             # Remove the PriceRegister object that is triggered
             triggered_signals: List[PriceRegister] = []
             for reg in self.REGISTER:
-                logger.info(f"Registered: {reg} with id {id(reg)}")
+                logger.debug(f"Registered: {reg} with id {id(reg)}")
                 live_price = self._redis_backend.get(reg.symbol)
                 if live_price is None or "ltp" not in live_price:
                     raise PriceMonitorError(
@@ -127,10 +127,10 @@ class PriceMonitor:
                     )
                 live_price = live_price["ltp"]
                 price_diff = live_price - reg.reference_price
-                logger.info(f"Live price: {live_price}")
-                logger.info(f"Ref price: {reg.reference_price}")
-                logger.info(f"Up point: {reg.up_point}")
-                logger.info(f"Down point: {reg.down_point}")
+                logger.debug(f"Live price: {live_price}")
+                logger.debug(f"Ref price: {reg.reference_price}")
+                logger.debug(f"Up point: {reg.up_point}")
+                logger.debug(f"Down point: {reg.down_point}")
                 if price_diff > reg.up_point:
                     logger.info("Shifting triggered")
                     reg.up_func()

@@ -347,7 +347,7 @@ class Strategy1(BaseStrategy):
             price=self.pe_buy_price, option_type="PE"
         )
         if ce_buy_strike == self._hedging.ce_instrument.strike and \
-                pe_buy_strike == self._hedging.pe_instrument:
+                pe_buy_strike == self._hedging.pe_instrument.strike:
             # If both PE and CE strikes are same, don't shift the hedging
             logger.info(
                 f"Current CE and PE strike is same as hedging CE and PE strike. "
@@ -355,6 +355,10 @@ class Strategy1(BaseStrategy):
             )
             return None
         logger.info(f"Shifting hedges")
+        # logger.info(f"Current CE buy hedge: {self._hedging.ce_instrument.strike}")
+        # logger.info(f"New CE buy hedge: {ce_buy_strike}")
+        # logger.info(f"Current PE buy hedge: {self._hedging.ce_instrument.strike}")
+        # logger.info(f"New PE buy hedge: {pe_buy_strike}")
         now = istnow()
         new_hedging: PairInstrument = PairInstrument()
         # Buying new hedges
