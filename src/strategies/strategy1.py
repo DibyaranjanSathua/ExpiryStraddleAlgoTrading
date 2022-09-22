@@ -579,7 +579,7 @@ class Strategy1(BaseStrategy):
             lot_size=self._lot_size,
             entry=self._entry_time
         )
-        straddle_price = self.get_pair_instrument_entry_price(self._straddle)
+        straddle_price = self.get_pair_instrument_entry_price(straddle)
         return straddle_price
 
     @property
