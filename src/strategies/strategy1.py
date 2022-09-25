@@ -392,6 +392,9 @@ class Strategy1(BaseStrategy):
         # Buying new hedge
         self.place_instrument_order(instrument)
         logger.info(f"Squaring off CE hedge: {self._hedging.ce_instrument}")
+        pnl = self.get_instrument_pnl(self._hedging.ce_instrument)
+        logger.info(f"CE hedge PnL: {pnl}")
+        self._pnl += pnl
         self._hedging.ce_instrument.action = Action.SELL
         self.place_instrument_order(self._hedging.ce_instrument)
         self._hedging.ce_instrument = instrument
@@ -410,6 +413,9 @@ class Strategy1(BaseStrategy):
         # Buying new hedge
         self.place_instrument_order(instrument)
         logger.info(f"Squaring off PE hedge: {self._hedging.pe_instrument}")
+        pnl = self.get_instrument_pnl(self._hedging.pe_instrument)
+        logger.info(f"PE hedge PnL: {pnl}")
+        self._pnl += pnl
         self._hedging.pe_instrument.action = Action.SELL
         self.place_instrument_order(self._hedging.pe_instrument)
         self._hedging.pe_instrument = instrument
@@ -538,7 +544,7 @@ class Strategy1(BaseStrategy):
         """ Get the strategy pnl """
         straddle_pnl = self.get_pair_instrument_pnl(self._straddle)
         hedging_pnl = self.get_pair_instrument_pnl(self._hedging)
-        return round((self._pnl + straddle_pnl + hedging_pnl) * self.QUANTITY * self._lot_size, 2)
+        return round(self._pnl + straddle_pnl + hedging_pnl, 2)
 
     def get_pair_instrument_pnl(self, instrument: PairInstrument):
         """ Calculate current straddle pnl """
@@ -551,10 +557,8 @@ class Strategy1(BaseStrategy):
         entry_price = instrument.price
         current_price = self._price_monitor.get_price_by_symbol(instrument.symbol)
         pnl = self.calc_pnl(entry_price, current_price, instrument.action)
-        # logger.info(f"Entry price for {instrument.symbol}: {entry_price}")
-        # logger.info(f"Current price for {instrument.symbol}: {current_price}")
-        # logger.info(f"PnL for {instrument.symbol}: {pnl}")
-        return round(pnl, 2)
+        # instrument lot size is lot size * quantity
+        return round(pnl * instrument.lot_size, 2)
 
     @staticmethod
     def calc_pnl(entry_price: float, current_price: float, action: Action):
