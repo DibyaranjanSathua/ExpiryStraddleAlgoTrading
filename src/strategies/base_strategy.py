@@ -66,10 +66,22 @@ class BaseStrategy(ABC):
     def place_pair_instrument_order(self, pair_instrument: PairInstrument):
         """ Place the order using broker API """
         if self.dry_run:
-            logger.info(f"Skipping placing order as running in dry-run mode")
+            logger.info(
+                f"Skipping placing order for pair instrument {pair_instrument} as running in "
+                f"dry-run mode"
+            )
             return None
         self._broker_api.place_intraday_options_order(pair_instrument.ce_instrument)
         self._broker_api.place_intraday_options_order(pair_instrument.pe_instrument)
+
+    def place_instrument_order(self, instrument: Instrument):
+        """ Place the order using broker API """
+        if self.dry_run:
+            logger.info(
+                f"Skipping placing order for instrument {instrument} as running in dry-run mode"
+            )
+            return None
+        self._broker_api.place_intraday_options_order(instrument)
 
     @staticmethod
     def is_market_hour(dt: datetime.datetime) -> bool:

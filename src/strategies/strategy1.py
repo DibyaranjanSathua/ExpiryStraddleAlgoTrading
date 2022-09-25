@@ -346,46 +346,73 @@ class Strategy1(BaseStrategy):
         pe_buy_strike = self._price_monitor.get_strike_by_price(
             price=self.pe_buy_price, option_type="PE"
         )
-        if ce_buy_strike == self._hedging.ce_instrument.strike and \
-                pe_buy_strike == self._hedging.pe_instrument.strike:
-            # If both PE and CE strikes are same, don't shift the hedging
+        if ce_buy_strike == self._hedging.ce_instrument.strike:
             logger.info(
-                f"Current CE and PE strike is same as hedging CE and PE strike. "
-                f"Skipping shifting of hedges."
+                f"New CE strike is same as current hedging CE strike. "
+                f"Skipping shifting of CE hedge."
             )
-            return None
-        logger.info(f"Shifting hedges")
-        # logger.info(f"Current CE buy hedge: {self._hedging.ce_instrument.strike}")
-        # logger.info(f"New CE buy hedge: {ce_buy_strike}")
-        # logger.info(f"Current PE buy hedge: {self._hedging.ce_instrument.strike}")
-        # logger.info(f"New PE buy hedge: {pe_buy_strike}")
+        elif ce_buy_strike > self._hedging.ce_instrument.strike:
+            logger.info(
+                f"New CE strike {ce_buy_strike} is upward to current hedging CE strike "
+                f"{self._hedging.ce_instrument.strike}. Skipping shifting of CE hedge."
+            )
+        else:
+            logger.info(f"Shifting CE hedge")
+            logger.info(f"Current CE buy hedge: {self._hedging.ce_instrument.strike}")
+            logger.info(f"New CE buy hedge: {ce_buy_strike}")
+            self.shift_ce_hedge(ce_buy_strike)
+
+        if pe_buy_strike == self._hedging.pe_instrument.strike:
+            logger.info(
+                f"New PE strike is same as current hedging PE strike. "
+                f"Skipping shifting of PE hedge."
+            )
+        elif pe_buy_strike < self._hedging.pe_instrument.strike:
+            logger.info(
+                f"New PE strike {pe_buy_strike} is downward to current hedging PE strike "
+                f"{self._hedging.pe_instrument.strike}. Skipping shifting of PE hedge."
+            )
+        else:
+            logger.info(f"Shifting PE hedge")
+            logger.info(f"Current PE buy hedge: {self._hedging.pe_instrument.strike}")
+            logger.info(f"New PE buy hedge: {pe_buy_strike}")
+            self.shift_pe_hedge(pe_buy_strike)
+
+    def shift_ce_hedge(self, strike: int):
+        """ Shift CE hedging leg """
         now = istnow()
-        new_hedging: PairInstrument = PairInstrument()
-        # Buying new hedges
-        new_hedging.ce_instrument = self.get_instrument(
-            strike=ce_buy_strike,
+        instrument = self.get_instrument(
+            strike=strike,
             option_type="CE",
             action=Action.BUY,
             lot_size=self._lot_size,
             entry=now
         )
-        new_hedging.pe_instrument = self.get_instrument(
-            strike=pe_buy_strike,
+        logger.info(f"CE hedging price: {instrument.price}")
+        # Buying new hedge
+        self.place_instrument_order(instrument)
+        logger.info(f"Squaring off CE hedge: {self._hedging.ce_instrument}")
+        self._hedging.ce_instrument.action = Action.SELL
+        self.place_instrument_order(self._hedging.ce_instrument)
+        self._hedging.ce_instrument = instrument
+
+    def shift_pe_hedge(self, strike: int):
+        """ Shift PE hedging leg """
+        now = istnow()
+        instrument = self.get_instrument(
+            strike=strike,
             option_type="PE",
             action=Action.BUY,
             lot_size=self._lot_size,
             entry=now
         )
-        logger.info(f"Shifting hedging to {new_hedging}")
-        hedging_price = self.get_pair_instrument_entry_price(new_hedging)
-        logger.info(f"Hedging price: {hedging_price}")
-        self.place_pair_instrument_order(self._hedging)
-        # Squaring off previous hedges
-        logger.info(f"Squaring off hedges {self._hedging}")
-        self._hedging.ce_instrument.action = Action.SELL
+        logger.info(f"PE hedging price: {instrument.price}")
+        # Buying new hedge
+        self.place_instrument_order(instrument)
+        logger.info(f"Squaring off PE hedge: {self._hedging.pe_instrument}")
         self._hedging.pe_instrument.action = Action.SELL
-        self.place_pair_instrument_order(self._hedging)
-        self._hedging = new_hedging
+        self.place_instrument_order(self._hedging.pe_instrument)
+        self._hedging.pe_instrument = instrument
 
     def trade_remaining_lot(self) -> None:
         """
