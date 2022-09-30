@@ -18,7 +18,8 @@ from src.utils.logger import LogFacade
 
 
 trading_logger: LogFacade = LogFacade.get_logger("trading_main")
-market_feed_logger: LogFacade = LogFacade.get_logger("market_feed_main")
+ce_market_feed_logger: LogFacade = LogFacade.get_logger("ce_market_feed_main")
+pe_market_feed_logger: LogFacade = LogFacade.get_logger("pe_market_feed_main")
 config_path = BASE_DIR / 'data' / 'config.json'
 config = ConfigReader(config_file_path=config_path)
 
@@ -35,6 +36,8 @@ def run_market_feed(option_type: Optional[str] = None):
     """ Run market feed """
     market_feeds_accounts = config["market_feeds"]
     symbol_parser = AngelBrokingSymbolParser.instance()
+    market_feed_logger = ce_market_feed_logger if option_type == "CE" \
+        else pe_market_feed_logger
     if option_type is None:
         market_feed_logger.info(f"Setting up market feeds for both CE or PE strikes")
         account = market_feeds_accounts["CE"]
@@ -86,6 +89,8 @@ def main():
             trading_logger.error(err)
             trading_logger.exception(traceback.print_exc())
     if args.market_feeds:
+        market_feed_logger = ce_market_feed_logger if args.option_type == "CE" \
+            else pe_market_feed_logger
         try:
             run_market_feed(args.option_type)
         except Exception as err:
