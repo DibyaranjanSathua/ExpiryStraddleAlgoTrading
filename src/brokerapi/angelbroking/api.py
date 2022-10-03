@@ -5,9 +5,11 @@ Created on:     05/08/22, 9:52 pm
 """
 from typing import Optional, List, Dict
 import datetime
+import time
 import enum
 
 import requests
+import pyotp
 from smartapi import SmartConnect, SmartWebSocket as SmartWebSocket_
 
 from src.brokerapi.base_api import BaseApi, BrokerApiError
@@ -67,10 +69,11 @@ class OrderConstants:
 class AngelBrokingApi(BaseApi):
     """ Class containing methods for connecting to AngelBroking API """
 
-    def __init__(self, api_key: str, client_id: str, password: str):
+    def __init__(self, api_key: str, client_id: str, password: str, totp_key: str):
         self._api_key = api_key
         self._client_id = client_id
         self._password = password
+        self._totp_key = totp_key
         self._smart_connect = SmartConnect(api_key=self._api_key)
         self._refresh_token: Optional[str] = None
         self._access_token: Optional[str] = None
@@ -80,8 +83,28 @@ class AngelBrokingApi(BaseApi):
 
     def login(self):
         """ Login to smart API """
-        response = self._smart_connect.generateSession(self._client_id, self._password)
-        if not response['status']:
+        # Generate TOTP
+        totp = pyotp.TOTP(self._totp_key)
+        # totp = totp.now()
+        attempt = 5
+        while attempt > 0:
+            try:
+                response = self._smart_connect.generateSession(
+                    self._client_id, self._password, totp.now()
+                )
+            except requests.exceptions.ReadTimeout as err:
+                logger.warning(f"Failed to connect to login API. AngleBroking API issue.")
+                logger.error(err)
+                logger.info(f"Sleeping for 30 sec")
+                time.sleep(30)
+                continue
+            if response['status']:
+                break
+            attempt -= 1
+            logger.warning(f"Logging Failed. Trying again after 15 sec. Attempt left {attempt}")
+            logger.error(response['message'])
+            time.sleep(15)
+        else:
             raise BrokerApiError(
                 f"Error login to AngelBroking API. {response['message']}"
             )
@@ -425,7 +448,8 @@ if __name__ == "__main__":
     api_key = os.environ.get("ANGEL_BROKING_API_KEY")
     client_id = os.environ.get("ANGEL_BROKING_CLIENT_ID")
     password = os.environ.get("ANGEL_BROKING_PASSWORD")
-    api = AngelBrokingApi(api_key, client_id, password)
+    totp_key = os.environ.get("ANGEL_BROKING_TOTP_KEY")
+    api = AngelBrokingApi(api_key, client_id, password, totp_key)
     api.login()
     user = api.get_user_profile()
     print(user)

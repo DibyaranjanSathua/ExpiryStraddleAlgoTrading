@@ -25,8 +25,17 @@ class Strategy1(BaseStrategy):
     STRATEGY_CODE: str = "strategy1"
     QUANTITY: int = 50
 
-    def __init__(self, price_monitor: PriceMonitor, config: ConfigReader, dry_run: bool = False):
-        super(Strategy1, self).__init__(dry_run=dry_run)
+    def __init__(
+            self,
+            api_key: str,
+            client_id: str,
+            password: str,
+            totp_key: str,
+            price_monitor: PriceMonitor,
+            config: ConfigReader,
+            dry_run: bool = False
+    ):
+        super(Strategy1, self).__init__(api_key, client_id, password, totp_key, dry_run=dry_run)
         self._dry_run: bool = dry_run
         if self._dry_run:
             logger.info(f"Executing in dry-run mode")

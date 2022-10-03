@@ -23,7 +23,19 @@ class BaseStrategy(ABC):
     """ Abstract class contains common functions that needs to be implemented in the child class """
     STRATEGY_CODE: str = ""
 
-    def __init__(self, dry_run: bool = False, clean_up: bool = False):
+    def __init__(
+            self,
+            api_key: str,
+            client_id: str,
+            password: str,
+            totp_key: str,
+            dry_run: bool = False,
+            clean_up: bool = False
+    ):
+        self._api_key = api_key
+        self._client_id = client_id
+        self._password = password
+        self._totp_key = totp_key
         self.dry_run: bool = dry_run
         self.clean_up_flag: bool = clean_up
         self._broker_api: Optional[AngelBrokingApi] = None
@@ -45,12 +57,12 @@ class BaseStrategy(ABC):
 
     def setup_broking_api(self):
         """ Setup broking API """
-        dotenv_path = BASE_DIR / 'env' / '.env'
-        load_dotenv(dotenv_path=dotenv_path)
-        api_key = os.environ.get("ANGEL_BROKING_API_KEY")
-        client_id = os.environ.get("ANGEL_BROKING_CLIENT_ID")
-        password = os.environ.get("ANGEL_BROKING_PASSWORD")
-        self._broker_api = AngelBrokingApi(api_key, client_id, password)
+        self._broker_api = AngelBrokingApi(
+            api_key=self._api_key,
+            client_id=self._client_id,
+            password=self._password,
+            totp_key=self._totp_key
+        )
         self._broker_api.login()
 
     def get_initial_capital(self) -> float:

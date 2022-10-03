@@ -17,6 +17,7 @@ class MarketFeeds:
             api_key: str,
             client_id: str,
             password: str,
+            totp_key: str,
             symbol_parser: AngelBrokingSymbolParser,
             only_ce_or_pe: bool = True,
             option_type: str = "CE"
@@ -33,7 +34,9 @@ class MarketFeeds:
         # is ignored.
         self._only_ce_or_pe = only_ce_or_pe
         self._option_type = option_type
-        self._api = AngelBrokingApi(api_key=api_key, client_id=client_id, password=password)
+        self._api = AngelBrokingApi(
+            api_key=api_key, client_id=client_id, password=password, totp_key=totp_key
+        )
         self._symbol_parser = symbol_parser
         self._option_tokens = []        # Stores the token for subscribing for web socket data
         self._token_symbol_mapper = TokenSymbolMapper()

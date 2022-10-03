@@ -29,7 +29,7 @@ def clean_up():
     redis_backend.cleanup(pattern="NIFTY*")
 
 
-def run_market_feed(market_feed_logger, option_type: Optional[str] = None):
+def run_market_feed(market_feed_logger: LogFacade, option_type: Optional[str] = None):
     """ Run market feed """
     market_feeds_accounts = config["market_feeds"]
     symbol_parser = AngelBrokingSymbolParser.instance()
@@ -40,6 +40,7 @@ def run_market_feed(market_feed_logger, option_type: Optional[str] = None):
             api_key=account["api_key"],
             client_id=account["client_id"],
             password=account["password"],
+            totp_key=account["totp_key"],
             symbol_parser=symbol_parser,
             only_ce_or_pe=False,
         )
@@ -51,6 +52,7 @@ def run_market_feed(market_feed_logger, option_type: Optional[str] = None):
             api_key=account["api_key"],
             client_id=account["client_id"],
             password=account["password"],
+            totp_key=account["totp_key"],
             symbol_parser=symbol_parser,
             only_ce_or_pe=True,
             option_type=option_type
@@ -58,14 +60,43 @@ def run_market_feed(market_feed_logger, option_type: Optional[str] = None):
         market_feeds.setup()
 
 
-def run_strategy1(dry_run: bool):
+def run_strategy1(logger: LogFacade, dry_run: bool):
     """ Run strategy1 """
     strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
+    trading_accounts = config["trading_accounts"]
     price_monitor = PriceMonitor()
     price_monitor.setup()
     price_monitor.run_in_background()
-    strategy = Strategy1(price_monitor=price_monitor, config=strategy_config, dry_run=dry_run)
-    strategy.execute()
+    for account in trading_accounts:
+        meta = account["meta"]
+        if Strategy1.STRATEGY_CODE not in meta["strategies"]:
+            logger.info(
+                f"Skipping running {Strategy1.STRATEGY_CODE} for {meta['name']} as "
+                f"{Strategy1.STRATEGY_CODE} is missing in meta['strategies']"
+            )
+            continue
+        logger.info(
+            f"Running {Strategy1.STRATEGY_CODE} for account {meta['name']} with client id "
+            f"{account['client_id']}"
+        )
+        try:
+            strategy = Strategy1(
+                api_key=account["api_key"],
+                client_id=account["client_id"],
+                password=account["password"],
+                totp_key=account["totp_key"],
+                price_monitor=price_monitor,
+                config=strategy_config,
+                dry_run=dry_run
+            )
+            strategy.execute()
+        except Exception as err:
+            logger.error(
+                f"Strategy1 execution error for {meta['name']} with client id "
+                f"{account['client_id']}"
+            )
+            logger.error(err)
+            logger.exception(traceback.print_exc())
 
 
 def main():
@@ -80,7 +111,7 @@ def main():
     if args.trading:
         trading_logger: LogFacade = LogFacade.get_logger("trading_main")
         try:
-            run_strategy1(dry_run=args.dry_run)
+            run_strategy1(logger=trading_logger, dry_run=args.dry_run)
         except Exception as err:
             trading_logger.error(err)
             trading_logger.exception(traceback.print_exc())
