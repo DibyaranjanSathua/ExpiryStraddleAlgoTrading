@@ -17,7 +17,6 @@ from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
 
 
-trading_logger: LogFacade = LogFacade.get_logger("trading_main")
 config_path = BASE_DIR / 'data' / 'config.json'
 config = ConfigReader(config_file_path=config_path)
 
@@ -79,6 +78,7 @@ def main():
     parser.add_argument("--option-type", type=str, help="Use for market feeds to get strike data")
     args = parser.parse_args()
     if args.trading:
+        trading_logger: LogFacade = LogFacade.get_logger("trading_main")
         try:
             run_strategy1(dry_run=args.dry_run)
         except Exception as err:
