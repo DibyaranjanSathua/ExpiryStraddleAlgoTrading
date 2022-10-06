@@ -121,14 +121,16 @@ class Strategy1(BaseStrategy):
     def exit(self) -> None:
         """ Exit logic """
         logger.info(f"Exiting strategy")
-        logger.info(f"Squaring off straddle {self._straddle}")
-        self._straddle.ce_instrument.action = Action.BUY
-        self._straddle.pe_instrument.action = Action.BUY
-        self.place_pair_instrument_order(self._straddle)
-        logger.info(f"Squaring off hedges {self._hedging}")
-        self._hedging.ce_instrument.action = Action.SELL
-        self._hedging.pe_instrument.action = Action.SELL
-        self.place_pair_instrument_order(self._hedging)
+        if self._straddle is not None:
+            logger.info(f"Squaring off straddle {self._straddle}")
+            self._straddle.ce_instrument.action = Action.BUY
+            self._straddle.pe_instrument.action = Action.BUY
+            self.place_pair_instrument_order(self._straddle)
+        if self._hedging is not None:
+            logger.info(f"Squaring off hedges {self._hedging}")
+            self._hedging.ce_instrument.action = Action.SELL
+            self._hedging.pe_instrument.action = Action.SELL
+            self.place_pair_instrument_order(self._hedging)
 
     def monitor_pnl(self, pnl: float) -> bool:
         """
@@ -279,6 +281,8 @@ class Strategy1(BaseStrategy):
 
     def shift_straddle(self):
         """ Shift straddle """
+        if self._straddle is None:
+            return None
         self._market_price = self._price_monitor.get_nifty_value()
         current_straddle_strike = self._price_monitor.get_atm_strike()
         if current_straddle_strike == self._straddle_strike:
@@ -287,6 +291,32 @@ class Strategy1(BaseStrategy):
                 f"strike is same"
             )
             return None
+        # Square off straddle if straddle strike is same as hedging ce or pe strike
+        if current_straddle_strike == self._hedging.ce_instrument.strike or \
+                current_straddle_strike == self._hedging.pe_instrument.strike:
+            if current_straddle_strike == self._hedging.ce_instrument.strike:
+                logger.info(
+                    f"New shifting straddle strike {current_straddle_strike} is same as hedging "
+                    f"ce strike {self._hedging.ce_instrument.strike}. Squaring off straddle."
+                )
+            else:
+                logger.info(
+                    f"New shifting straddle strike {current_straddle_strike} is same as hedging "
+                    f"pe strike {self._hedging.pe_instrument.strike}. Squaring off straddle."
+                )
+            # Calculate the pnl of previous straddle
+            straddle_pnl = self.get_pair_instrument_pnl(self._straddle)
+            logger.info(f"Straddle {self._straddle} PnL: {straddle_pnl}")
+            self._pnl += straddle_pnl
+            # Squaring off straddle
+            logger.info(f"Squaring off straddle {self._straddle}")
+            self._straddle.ce_instrument.action = Action.BUY
+            self._straddle.pe_instrument.action = Action.BUY
+            self.place_pair_instrument_order(self._straddle)
+            self._straddle = None
+            self._straddle_strike = 0
+            return None
+
         self._straddle_strike = current_straddle_strike
         logger.info(f"Shifting straddle")
         logger.info(
@@ -365,6 +395,11 @@ class Strategy1(BaseStrategy):
                 f"New CE strike {ce_buy_strike} is upward to current hedging CE strike "
                 f"{self._hedging.ce_instrument.strike}. Skipping shifting of CE hedge."
             )
+        elif ce_buy_strike == self._straddle_strike:
+            logger.info(
+                f"New CE strike {ce_buy_strike} is same as current straddle strike "
+                f"{self._straddle_strike}. Skipping shifting of CE hedge."
+            )
         else:
             logger.info(f"Shifting CE hedge")
             logger.info(f"Current CE buy hedge: {self._hedging.ce_instrument.strike}")
@@ -380,6 +415,11 @@ class Strategy1(BaseStrategy):
             logger.info(
                 f"New PE strike {pe_buy_strike} is downward to current hedging PE strike "
                 f"{self._hedging.pe_instrument.strike}. Skipping shifting of PE hedge."
+            )
+        elif pe_buy_strike == self._straddle_strike:
+            logger.info(
+                f"New PE strike {pe_buy_strike} is same as current straddle strike "
+                f"{self._straddle_strike}. Skipping shifting of PE hedge."
             )
         else:
             logger.info(f"Shifting PE hedge")
@@ -551,8 +591,8 @@ class Strategy1(BaseStrategy):
 
     def get_strategy_pnl(self):
         """ Get the strategy pnl """
-        straddle_pnl = self.get_pair_instrument_pnl(self._straddle)
-        hedging_pnl = self.get_pair_instrument_pnl(self._hedging)
+        straddle_pnl = self.get_pair_instrument_pnl(self._straddle) if self._straddle else 0
+        hedging_pnl = self.get_pair_instrument_pnl(self._hedging) if self._hedging else 0
         return round(self._pnl + straddle_pnl + hedging_pnl, 2)
 
     def get_pair_instrument_pnl(self, instrument: PairInstrument):
