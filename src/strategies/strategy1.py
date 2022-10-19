@@ -378,12 +378,27 @@ class Strategy1(BaseStrategy):
 
     def shift_hedging(self):
         """ Shift hedging close to Rs 5 """
+        now = istnow()
         # Buy hedging
         ce_buy_strike = self._price_monitor.get_strike_by_price(
             price=self.ce_buy_price, option_type="CE"
         )
+        ce_buy_instrument = self.get_instrument(
+            strike=ce_buy_strike,
+            option_type="CE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=now
+        )
         pe_buy_strike = self._price_monitor.get_strike_by_price(
             price=self.pe_buy_price, option_type="PE"
+        )
+        pe_buy_instrument = self.get_instrument(
+            strike=pe_buy_strike,
+            option_type="PE",
+            action=Action.BUY,
+            lot_size=self._lot_size,
+            entry=now
         )
         if ce_buy_strike == self._hedging.ce_instrument.strike:
             logger.info(
@@ -400,11 +415,16 @@ class Strategy1(BaseStrategy):
                 f"New CE strike {ce_buy_strike} is same as current straddle strike "
                 f"{self._straddle_strike}. Skipping shifting of CE hedge."
             )
+        elif ce_buy_instrument.price > 6:
+            logger.info(
+                f"New CE strike {ce_buy_strike} price {ce_buy_instrument.price} is more than 6. "
+                f"Skipping shifting of CE hedge."
+            )
         else:
             logger.info(f"Shifting CE hedge")
             logger.info(f"Current CE buy hedge: {self._hedging.ce_instrument.strike}")
             logger.info(f"New CE buy hedge: {ce_buy_strike}")
-            self.shift_ce_hedge(ce_buy_strike)
+            self.shift_ce_hedge(ce_buy_instrument)
 
         if pe_buy_strike == self._hedging.pe_instrument.strike:
             logger.info(
@@ -421,22 +441,19 @@ class Strategy1(BaseStrategy):
                 f"New PE strike {pe_buy_strike} is same as current straddle strike "
                 f"{self._straddle_strike}. Skipping shifting of PE hedge."
             )
+        elif pe_buy_instrument.price > 6:
+            logger.info(
+                f"New PE strike {pe_buy_strike} price {pe_buy_instrument.price} is more than 6. "
+                f"Skipping shifting of PE hedge."
+            )
         else:
             logger.info(f"Shifting PE hedge")
             logger.info(f"Current PE buy hedge: {self._hedging.pe_instrument.strike}")
             logger.info(f"New PE buy hedge: {pe_buy_strike}")
-            self.shift_pe_hedge(pe_buy_strike)
+            self.shift_pe_hedge(pe_buy_instrument)
 
-    def shift_ce_hedge(self, strike: int):
+    def shift_ce_hedge(self, instrument: Instrument):
         """ Shift CE hedging leg """
-        now = istnow()
-        instrument = self.get_instrument(
-            strike=strike,
-            option_type="CE",
-            action=Action.BUY,
-            lot_size=self._lot_size,
-            entry=now
-        )
         logger.info(f"CE hedging price: {instrument.price}")
         # Buying new hedge
         self.place_instrument_order(instrument)
@@ -448,16 +465,8 @@ class Strategy1(BaseStrategy):
         self.place_instrument_order(self._hedging.ce_instrument)
         self._hedging.ce_instrument = instrument
 
-    def shift_pe_hedge(self, strike: int):
+    def shift_pe_hedge(self, instrument: Instrument):
         """ Shift PE hedging leg """
-        now = istnow()
-        instrument = self.get_instrument(
-            strike=strike,
-            option_type="PE",
-            action=Action.BUY,
-            lot_size=self._lot_size,
-            entry=now
-        )
         logger.info(f"PE hedging price: {instrument.price}")
         # Buying new hedge
         self.place_instrument_order(instrument)
