@@ -164,7 +164,7 @@ class Strategy1(BaseStrategy):
                 # For Thursday check if straddle price is in between 70 and 110
                 if self._weekday == Weekdays.THURSDAY and self._changed_entry_time is None:
                     straddle_price = self.get_current_straddle_price()
-                    if 70 <= straddle_price <= 110:
+                    if 60 <= straddle_price <= 110:
                         self.entry()
                     else:
                         logger.info(f"Straddle price {straddle_price} is outside range 70 - 110.")
