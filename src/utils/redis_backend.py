@@ -3,7 +3,7 @@ File:           redis_backend.py
 Author:         Dibyaranjan Sathua
 Created on:     18/08/22, 5:15 pm
 """
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 import os
 import json
 
@@ -28,13 +28,18 @@ class RedisBackend:
     def connect(self) -> None:
         self._redis = redis.Redis(host=self._host, port=self._port)
 
-    def set(self, key: str, data: Dict) -> None:
-        data_str = json.dumps(data)
-        self._redis.set(key, data_str)
+    def set(self, key: str, data: Union[Dict, str]) -> None:
+        if isinstance(data, dict):
+            data = json.dumps(data)
+        self._redis.set(key, data)
 
     def get(self, key: str) -> Optional[Dict]:
         data = self._redis.get(key)
-        return data and json.loads(data)
+        if data:
+            try:
+                return json.loads(data)
+            except json.decoder.JSONDecodeError:
+                return data.decode("utf-8")
 
     def cleanup(self, pattern="NIFTY*") -> None:
         """ Delete all keys matching the pattern so that everyday we have fresh data """
@@ -54,8 +59,11 @@ if __name__ == "__main__":
     data = {"token": "12345", "ltp": 123}
     obj.set("NIFTY25AUG2217000CE", data)
     value = obj.get("NIFTY25AUG2217000CE")
+    print(value)
     if value is None:
         print("No data found")
     else:
         assert data == value
+    obj.set("KEY", "VALUE")
+    value = obj.get("KEY")
     print(value)

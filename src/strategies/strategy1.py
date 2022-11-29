@@ -15,9 +15,14 @@ from src.price_monitor.price_monitor import PriceMonitor, PriceRegister
 from src.utils.enum import Weekdays
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
+from src.utils.redis_backend import RedisBackend
+from dashboard.db import SessionLocal
+from dashboard.db.db_api import DBApi
+from dashboard.db.models import AlgoRunConfig
 
 
 logger: LogFacade = LogFacade.get_logger("strategy1")
+db = SessionLocal()
 
 
 class Strategy1(BaseStrategy):
@@ -60,6 +65,8 @@ class Strategy1(BaseStrategy):
         self._remaining_lot_traded: bool = False    # Indicate if remaining lot traded or not
         self._remaining_lot_size: Optional[int] = None
         self._actual_margin_per_lot: Optional[float] = None
+        self._day_config: Optional[AlgoRunConfig] = None        # Database model to save run time
+        self._redis_backend = RedisBackend()
 
     def entry(self) -> None:
         """ Entry logic """
@@ -148,16 +155,28 @@ class Strategy1(BaseStrategy):
 
     def execute(self) -> None:
         """ Execute the strategy """
+        power = DBApi.get_algo_power(db)
+        if not power.on:
+            logger.info(f"Algo System is OFF")
+            return None
+        self._redis_backend.connect()
         logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
         super(Strategy1, self).execute()
         now = istnow()
         self._weekday = Weekdays(now.weekday())
         logger.info(f"Trading day: {self._weekday.name}")
+        # Check if Algo is ON for this day
+        self._day_config = DBApi.get_run_config_by_day(db, day=self._weekday.name.lower())
+        if not self._day_config.run:
+            logger.info(f"Algo System is OFF for {self._weekday.name}")
+            return None
         logger.info(f"Initial Capital: {self.initial_capital}")
         logger.info(f"Capital to trade: {self.capital_to_trade}")
         logger.info(f"SL percent: {self.sl_percent}")
         logger.info(f"Target percent: {self.target_percent}")
         logger.info(f"Expected margin per lot: {self.expected_margin_per_lot}")
+        logger.info(f"Entry time: {self.entry_time}")
+        self._redis_backend.set("MANUAL_EXIT", "False")
         while True:
             now = istnow()
             if self.check_entry_time(now) and not self._entry_taken:
@@ -167,7 +186,7 @@ class Strategy1(BaseStrategy):
                     if 60 <= straddle_price <= 110:
                         self.entry()
                     else:
-                        logger.info(f"Straddle price {straddle_price} is outside range 70 - 110.")
+                        logger.info(f"Straddle price {straddle_price} is outside range 60 - 110.")
                         self._changed_entry_time = datetime.time(hour=10, minute=20)
                         logger.info(f"Changing the entry time to {self._changed_entry_time}")
                 else:
@@ -193,6 +212,11 @@ class Strategy1(BaseStrategy):
                 target_sl_hit = self.monitor_pnl(pnl)
                 if target_sl_hit:
                     break
+            # Check if manual exit is True
+            if self._redis_backend.get("MANUAL_EXIT") == "True":
+                logger.info(f"Manual exit triggered")
+                self.exit()
+                break
             time.sleep(2)
         logger.info(f"Stopping price monitoring")
         self._price_monitor.stop_monitor = True
@@ -694,7 +718,7 @@ class Strategy1(BaseStrategy):
     @property
     def entry_time(self) -> datetime.time:
         if self._changed_entry_time is None:
-            return self._config["entry_time"][self._weekday.name.lower()]
+            return self._day_config.time or self._config["entry_time"][self._weekday.name.lower()]
         return self._changed_entry_time
 
     @property
