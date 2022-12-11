@@ -188,6 +188,11 @@ app.layout = html.Div(
 )
 
 
+# Helper functions
+def time2str(d_time: datetime.time) -> str:
+    if d_time is not None:
+        return d_time.strftime("%H:%M")
+
 # Callbacks
 @app.callback(
     [
@@ -215,9 +220,9 @@ def algo_power_btn_callback(on):
     DBApi.update_algo_power_status(db, on)
     run_config = DBApi.get_run_config(db)
     if on:
-        output = [[config.run, config.time, False] for config in run_config]
+        output = [[config.run, time2str(config.time), False] for config in run_config]
     else:
-        output = [[on, config.time, True] for config in run_config]
+        output = [[on, time2str(config.time), True] for config in run_config]
     return [y for x in output for y in x]  # Flattening the list
 
 
@@ -248,7 +253,7 @@ def save_run_config_callback(n_clicks, *args):
     for index, day in enumerate(("monday", "tuesday", "wednesday", "thursday", "friday")):
         d_time = args[2 * index + 1] or ""      # Sometimes time value is None
         try:
-            d_time = datetime.datetime.strptime(d_time, "%H:%M:%S").time()
+            d_time = datetime.datetime.strptime(d_time, "%H:%M").time()
         except ValueError:
             d_time = None
         data[day] = {
