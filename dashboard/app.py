@@ -3,7 +3,8 @@ File:           app.py
 Author:         Dibyaranjan Sathua
 Created on:     07/11/22, 9:56 pm
 """
-from datetime import datetime as dt
+import datetime
+import time
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_daq as daq
@@ -245,9 +246,14 @@ def save_run_config_callback(n_clicks, *args):
         return [""]
     data = dict()
     for index, day in enumerate(("monday", "tuesday", "wednesday", "thursday", "friday")):
+        d_time = args[2 * index + 1] or ""      # Sometimes time value is None
+        try:
+            d_time = datetime.datetime.strptime(d_time, "%H:%M:%S").time()
+        except ValueError:
+            d_time = None
         data[day] = {
             "run": args[2 * index],
-            "time": args[2 * index + 1]
+            "time": d_time
         }
     DBApi.update_run_config(db, data)
     return ["Config saved successfully"]
