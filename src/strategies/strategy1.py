@@ -209,6 +209,7 @@ class Strategy1(BaseStrategy):
                 pnl = self.get_strategy_pnl()
                 logger.info(f"Lot traded: {self._lot_size}")
                 logger.info(f"Strategy PnL: {pnl}")
+                self._redis_backend.set("LIVE_PNL", str(pnl))
                 target_sl_hit = self.monitor_pnl(pnl)
                 if target_sl_hit:
                     break

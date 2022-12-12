@@ -156,7 +156,10 @@ app.layout = html.Div(
                 # Dummy div for power button callback
                 html.Div(children="", id="power-btn-callback", style={"display": "none"}),
                 # Dummy div for manual exit callback
-                html.Div(children="", id="manual-exit-callback", style={"display": "none"})
+                html.Div(children="", id="manual-exit-callback", style={"display": "none"}),
+                # Live update trigger
+                # Interval is in milliseconds
+                dcc.Interval(id="interval-component", interval=5*1000, n_intervals=0)
             ],
         ),
         html.Div(
@@ -177,7 +180,7 @@ app.layout = html.Div(
                         html.Div(
                             className="text-padding",
                             children=[
-                                "Show the results"
+                                html.H2(id="pnl-display")
                             ],
                         ),
                     ],
@@ -192,6 +195,7 @@ app.layout = html.Div(
 def time2str(d_time: datetime.time) -> str:
     if d_time is not None:
         return d_time.strftime("%H:%M")
+
 
 # Callbacks
 @app.callback(
@@ -288,9 +292,21 @@ def load_initial_power_state(children):
 def manual_exit_callback(n_clicks):
     if not n_clicks:
         return [""]
-    redis_backend.connect()
     redis_backend.set("MANUAL_EXIT", "True")
     return [""]
+
+
+@app.callback(
+    [
+        Output("pnl-display", "children")
+    ],
+    [
+        Input("interval-component", "n_intervals")
+    ]
+)
+def live_pnl_update(n):
+    pnl = redis_backend.get("LIVE_PNL")
+    return [f"PnL: {pnl}"]
 
 
 if __name__ == "__main__":
