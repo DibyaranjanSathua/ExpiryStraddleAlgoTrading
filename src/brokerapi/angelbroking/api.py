@@ -111,6 +111,7 @@ class AngelBrokingApi(BaseApi):
         self._refresh_token = response["data"]["refreshToken"]
         self._feed_token = self._smart_connect.getfeedToken()
         self._symbol_parser = AngelBrokingSymbolParser.instance()
+        logger.info(f"Login successful")
 
     def get_user_profile(self):
         """ Return user profile """

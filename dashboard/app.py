@@ -159,7 +159,7 @@ app.layout = html.Div(
                 html.Div(children="", id="manual-exit-callback", style={"display": "none"}),
                 # Live update trigger
                 # Interval is in milliseconds
-                dcc.Interval(id="interval-component", interval=5*1000, n_intervals=0)
+                dcc.Interval(id="interval-component", interval=1*1000, n_intervals=0)
             ],
         ),
         html.Div(
