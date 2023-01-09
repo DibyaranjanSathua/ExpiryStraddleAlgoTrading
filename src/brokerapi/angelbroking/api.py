@@ -7,6 +7,7 @@ from typing import Optional, List, Dict
 import datetime
 import time
 import enum
+import traceback
 
 import requests
 import pyotp
@@ -184,6 +185,7 @@ class AngelBrokingApi(BaseApi):
         except Exception as err:
             logger.error(f"Error placing order")
             logger.error(err)
+            logger.exception(traceback.print_exc())
             return False
 
     def get_symbol_data(self, instrument: Instrument):
@@ -459,27 +461,27 @@ if __name__ == "__main__":
     # data = api.get_ltp_data(trading_symbol="NIFTY", symbol_token="26000", exhange="NSE")
     # print(data)
     # api.setup_market_feeds()
-    symbol_parser = AngelBrokingSymbolParser.instance()
+    # symbol_parser = AngelBrokingSymbolParser.instance()
     # symbol_parser1 = AngelBrokingSymbolParser.instance()
     # print(id(symbol_parser) == id(symbol_parser1))
-    print(symbol_parser.current_week_expiry)
-    symbol_data = symbol_parser.get_symbol_data(
-        ticker="NIFTY",
-        strike=18500,
-        expiry=symbol_parser.current_week_expiry,
-        option_type="CE"
-    )
-    instrument = Instrument(
-            action=Action.BUY,
-            lot_size=50,
-            expiry=symbol_parser.current_week_expiry,
-            option_type="CE",
-            strike=18500,
-            index="NIFTY",
-            entry=datetime.datetime.now(),
-            price=0,
-            order_id=""
-    )
+    # print(symbol_parser.current_week_expiry)
+    # symbol_data = symbol_parser.get_symbol_data(
+    #     ticker="NIFTY",
+    #     strike=18500,
+    #     expiry=symbol_parser.current_week_expiry,
+    #     option_type="CE"
+    # )
+    # instrument = Instrument(
+    #         action=Action.BUY,
+    #         lot_size=50,
+    #         expiry=symbol_parser.current_week_expiry,
+    #         option_type="CE",
+    #         strike=18500,
+    #         index="NIFTY",
+    #         entry=datetime.datetime.now(),
+    #         price=0,
+    #         order_id=""
+    # )
     # status = api.place_intraday_options_order(instrument)
     # print(f"Order status: {status}")
     # print(f"Order id: {instrument.order_id}")
