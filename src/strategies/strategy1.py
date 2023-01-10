@@ -578,17 +578,17 @@ class Strategy1(BaseStrategy):
             f"ATP Straddle PE after trading remaining lot: {self._straddle.pe_instrument.price}"
         )
         # Update hedge price as Average Traded Price
-        self._hedging.ce_instrument = \
+        self._hedging.ce_instrument.price = \
             (self._lot_size * self._hedging.ce_instrument.price + self.remaining_lot_size *
              remaining_lot_hedging.ce_instrument.price) / (self._lot_size + self.remaining_lot_size)
-        self._hedging.pe_instrument = \
+        self._hedging.pe_instrument.price = \
             (self._lot_size * self._hedging.pe_instrument.price + self.remaining_lot_size *
              remaining_lot_hedging.pe_instrument.price) / (self._lot_size + self.remaining_lot_size)
         logger.info(
-            f"ATP Hedge CE after trading remaining lot: {self._straddle.ce_instrument.price}"
+            f"ATP Hedge CE after trading remaining lot: {self._hedging.ce_instrument.price}"
         )
         logger.info(
-            f"ATP Hedge PE after trading remaining lot: {self._straddle.pe_instrument.price}"
+            f"ATP Hedge PE after trading remaining lot: {self._hedging.pe_instrument.price}"
         )
         # Update the total lot size
         logger.info(f"Lot size before trading remaining lot: {self._lot_size}")
