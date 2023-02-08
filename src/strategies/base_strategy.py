@@ -75,6 +75,10 @@ class BaseStrategy(ABC):
         funds = self._broker_api.get_funds_and_margin()
         return float(funds["utiliseddebits"])
 
+    def get_orderbook(self) -> list:
+        """ Get list of orders placed in the day """
+        return self._broker_api.get_order_book()
+
     def place_pair_instrument_order(self, pair_instrument: PairInstrument):
         """ Place the order using broker API """
         if self.dry_run:

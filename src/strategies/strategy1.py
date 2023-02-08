@@ -4,12 +4,12 @@ Author:         Dibyaranjan Sathua
 Created on:     22/08/22, 9:30 pm
 """
 import time
-from typing import Optional
+from typing import Optional, Tuple
 import datetime
 import math
 
 from src.strategies.base_strategy import BaseStrategy
-from src.utils import utc2ist, istnow, make_ist_aware
+from src.utils import istnow
 from src.strategies.instrument import Instrument, PairInstrument, Action
 from src.price_monitor.price_monitor import PriceMonitor, PriceRegister
 from src.utils.enum import Weekdays
@@ -440,9 +440,9 @@ class Strategy1(BaseStrategy):
                 f"New CE strike {ce_buy_strike} is same as current straddle strike "
                 f"{self._straddle_strike}. Skipping shifting of CE hedge."
             )
-        elif ce_buy_instrument.price > 6:
+        elif ce_buy_instrument.price > 5:
             logger.info(
-                f"New CE strike {ce_buy_strike} price {ce_buy_instrument.price} is more than 6. "
+                f"New CE strike {ce_buy_strike} price {ce_buy_instrument.price} is more than 5. "
                 f"Skipping shifting of CE hedge."
             )
         else:
@@ -466,9 +466,9 @@ class Strategy1(BaseStrategy):
                 f"New PE strike {pe_buy_strike} is same as current straddle strike "
                 f"{self._straddle_strike}. Skipping shifting of PE hedge."
             )
-        elif pe_buy_instrument.price > 6:
+        elif pe_buy_instrument.price > 5:
             logger.info(
-                f"New PE strike {pe_buy_strike} price {pe_buy_instrument.price} is more than 6. "
+                f"New PE strike {pe_buy_strike} price {pe_buy_instrument.price} is more than 5. "
                 f"Skipping shifting of PE hedge."
             )
         else:
@@ -655,6 +655,13 @@ class Strategy1(BaseStrategy):
 
     def get_strategy_pnl(self):
         """ Get the strategy pnl """
+        if self._dry_run:
+            return self.get_dry_run_pnl()
+        orderbook = self.get_orderbook()
+        return self.get_pnl_from_orderbook(orderbook)
+
+    def get_dry_run_pnl(self):
+        """ Return pnl when running in dry-run mode """
         straddle_pnl = self.get_pair_instrument_pnl(self._straddle) if self._straddle else 0
         hedging_pnl = self.get_pair_instrument_pnl(self._hedging) if self._hedging else 0
         return round(self._pnl + straddle_pnl + hedging_pnl, 2)
@@ -680,6 +687,118 @@ class Strategy1(BaseStrategy):
         if action == Action.SELL:
             pnl *= -1
         return round(pnl, 2)
+
+    @staticmethod
+    def orderbook_data_to_instrument(orderbook_data: dict) -> Instrument:
+        """ Convert a orderbook data to Instrument object """
+        expiry = datetime.datetime.strptime(orderbook_data["expirydate"], "%d%b%Y").date()
+        entry = datetime.datetime.strptime(orderbook_data["updatetime"], "%d-%b-%Y %H:%M:%S")
+        return Instrument(
+            action=orderbook_data["transactiontype"],
+            lot_size=int(orderbook_data["filledshares"]),
+            expiry=expiry,
+            option_type=orderbook_data["optiontype"],
+            strike=int(orderbook_data["strikeprice"]),
+            index="NIFTY",
+            entry=entry,
+            price=Strategy1.get_instrument_price_from_orderbook(orderbook_data),
+            order_id=orderbook_data["orderid"]
+        )
+
+    def get_pnl_from_orderbook(self, orderbook: list) -> float:
+        """ Calculate pnl using orderbook """
+        total_realised_pnl = 0
+        total_unrealised_pnl = 0
+        transactions = dict()
+        for order in orderbook:
+            instrument = Strategy1.orderbook_data_to_instrument(order)
+            if instrument.symbol not in transactions:
+                transactions[instrument.symbol] = instrument
+            else:
+                transaction1 = transactions[instrument.symbol]
+                transaction2 = instrument
+                # if transaction type are different and quantities are equal, then we are
+                # squaring off the position
+                if transaction1.action != transaction2.action and \
+                        transaction1.lot_size == transaction2.lot_size:
+                    total_realised_pnl += Strategy1.calc_pnl_orderbook(transaction1, transaction2)
+                    # remove the trading symbol from the transactions
+                    transactions.pop(instrument.symbol)
+                else:
+                    pnl, transaction = Strategy1.update_transaction(
+                        transaction1=transaction1,
+                        transaction2=transaction2
+                    )
+                    transactions[instrument.symbol] = transaction
+                    total_realised_pnl += pnl
+        # Calculate unrealised pnl
+        for instrument in transactions.values():
+            current_price = self._price_monitor.get_price_by_symbol(instrument.symbol)
+            if instrument.action == "BUY":
+                # For BUY instrument we are saving the price in negative
+                total_unrealised_pnl += current_price + instrument.price
+            else:
+                total_unrealised_pnl += instrument.price - current_price
+        return round(total_realised_pnl + total_unrealised_pnl, 2)
+
+    @staticmethod
+    def get_instrument_price_from_orderbook(data: dict) -> float:
+        """ Return instrument price. For BUY return in negative and for SELL return in positive """
+        price = data["averageprice"] * int(data["filledshares"])
+        if data["transactiontype"] == "BUY":
+            price *= -1
+        return price
+
+    @staticmethod
+    def update_transaction(
+            transaction1: Instrument, transaction2: Instrument
+    ) -> Tuple[float, Instrument]:
+        """
+        Returns pnl if transactions are squaring off. Also returns the updated transaction.
+        """
+        if transaction1.action == transaction2.action:
+            price = transaction1.price + transaction2.price
+            quantity = transaction1.lot_size + transaction2.lot_size
+            # pnl is zero as we are not squaring off
+            pnl = 0
+            new_instrument_price = price
+            new_instrument_action = transaction1.action
+            new_instrument_quantity = quantity
+        else:
+            # Squaring off few quantities. If quantities are same for both transaction1
+            # and transaction2, then it should call calc_pnl_orderbook method
+            if transaction1.lot_size > transaction2.lot_size:
+                min_qty = transaction2.lot_size
+                price1 = round(transaction1.price / transaction1.lot_size * min_qty, 2)
+                price2 = transaction2.price
+                pnl = round(price1 + price2, 2)
+                new_instrument_price = transaction1.price - price1
+                new_instrument_action = transaction1.action
+                new_instrument_quantity = transaction1.lot_size - min_qty
+            else:
+                min_qty = transaction1.lot_size
+                price1 = transaction1.price
+                price2 = round(transaction2.price / transaction2.lot_size * min_qty, 2)
+                pnl = round(price1 + price2, 2)
+                new_instrument_price = transaction2.price - price2
+                new_instrument_action = transaction2.action
+                new_instrument_quantity = transaction2.lot_size - min_qty
+        new_instrument = Instrument(
+            action=new_instrument_action,
+            lot_size=new_instrument_quantity,
+            expiry=transaction2.expiry,
+            option_type="",
+            strike=transaction2.strike,
+            index=transaction2.index,
+            entry=transaction2.entry,
+            price=new_instrument_price,
+            order_id=transaction2.order_id
+        )
+        return pnl, new_instrument
+
+    @staticmethod
+    def calc_pnl_orderbook(transaction1: Instrument, transaction2: Instrument):
+        return transaction1.price + transaction2.price
 
     def check_entry_time(self, dt: datetime.datetime) -> bool:
         """ Return True if the time is more than entry time. Entry time is 9:50 AM """
@@ -825,5 +944,16 @@ if __name__ == "__main__":
     price_monitor.run_in_background()
     config_path = BASE_DIR / 'data' / 'config.json'
     config = ConfigReader(config_file_path=config_path)
-    strategy = Strategy1(price_monitor=price_monitor, config=config, dry_run=True)
+    strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
+    trading_accounts = config["trading_accounts"]
+    account = trading_accounts.pop()
+    strategy = Strategy1(
+        api_key=account["api_key"],
+        client_id=account["client_id"],
+        password=account["password"],
+        totp_key=account["totp_key"],
+        price_monitor=price_monitor,
+        config=strategy_config,
+        dry_run=True
+    )
     strategy.execute()

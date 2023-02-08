@@ -198,6 +198,24 @@ class AngelBrokingApi(BaseApi):
         )
         return {"symbol": data["symbol"], "token": data["token"]}
 
+    def get_order_book(self) -> list:
+        """ Return order book data """
+        try:
+            response = self._smart_connect.orderBook()
+        except Exception as err:
+            logger.error(f"Error getting order book")
+            logger.error(err)
+            logger.exception(traceback.print_exc())
+            raise BrokerApiError(
+                f"Error getting order book for AngelBroking API."
+            )
+        if not response['status']:
+            raise BrokerApiError(
+                f"Error getting order book for AngelBroking API. {response['message']}"
+            )
+        assert 'data' in response, "data attribute is missing in SmartAPI"
+        return response["data"]
+
     @property
     def market_feeds(self) -> Optional["AngelBrokingMarketFeed"]:
         return self._market_feeds
@@ -458,6 +476,8 @@ if __name__ == "__main__":
     print(user)
     funds = api.get_funds_and_margin()
     print(funds)
+    order_book = api.get_order_book()
+    print(order_book)
     # data = api.get_ltp_data(trading_symbol="NIFTY", symbol_token="26000", exhange="NSE")
     # print(data)
     # api.setup_market_feeds()
