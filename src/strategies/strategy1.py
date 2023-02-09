@@ -733,7 +733,8 @@ class Strategy1(BaseStrategy):
                     total_realised_pnl += pnl
         # Calculate unrealised pnl
         for instrument in transactions.values():
-            current_price = self._price_monitor.get_price_by_symbol(instrument.symbol)
+            current_price = self._price_monitor.get_price_by_symbol(instrument.symbol) * \
+                            instrument.lot_size
             if instrument.action == "BUY":
                 # For BUY instrument we are saving the price in negative
                 total_unrealised_pnl += current_price + instrument.price
