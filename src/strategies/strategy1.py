@@ -788,7 +788,7 @@ class Strategy1(BaseStrategy):
             action=new_instrument_action,
             lot_size=new_instrument_quantity,
             expiry=transaction2.expiry,
-            option_type="",
+            option_type=transaction2.option_type,
             strike=transaction2.strike,
             index=transaction2.index,
             entry=transaction2.entry,
