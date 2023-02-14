@@ -138,6 +138,9 @@ class Strategy1(BaseStrategy):
             self._hedging.ce_instrument.action = Action.SELL
             self._hedging.pe_instrument.action = Action.SELL
             self.place_pair_instrument_order(self._hedging)
+        pnl = self.get_strategy_pnl()
+        logger.info(f"Final PnL: {pnl}")
+        self._redis_backend.set("LIVE_PNL", str(pnl))
 
     def monitor_pnl(self, pnl: float) -> bool:
         """
