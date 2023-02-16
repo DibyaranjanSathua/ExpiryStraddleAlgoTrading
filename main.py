@@ -97,6 +97,9 @@ def run_strategy1(logger: LogFacade, dry_run: bool):
             )
             logger.error(err)
             logger.exception(traceback.print_exc())
+    # Stopping price monitor. Else it will trigger straddle shift
+    # Check this logic when implementing multiple trading accounts
+    price_monitor.stop_monitor = True
 
 
 def main():
