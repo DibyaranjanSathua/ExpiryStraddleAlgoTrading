@@ -59,3 +59,14 @@ https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-
 8. sudo nginx -t
 9. sudo systemctl restart nginx
 10. Edit /etc/nginx/nginx.conf change user to ubuntu. Else you will see permission issue while connecting to the socket.
+
+## Crontab
+```shell
+14 4 * * 1-5 cd /home/ubuntu/ExpiryStraddleAlgoTrading; python3 main.py --clean-up
+15 4 * * 1-5 cd /home/ubuntu/ExpiryStraddleAlgoTrading; python3 main.py --market-feeds --option-type CE
+15 4 * * 1-5 cd /home/ubuntu/ExpiryStraddleAlgoTrading; python3 main.py --market-feeds --option-type PE
+18 4 * * 1-5 cd /home/ubuntu/ExpiryStraddleAlgoTrading; python3 main.py --trading
+# Kill if the process is still running once the process is exited
+30 10 * * * pkill -f main.py
+```
+
