@@ -15,6 +15,7 @@ from src.brokerapi.angelbroking import AngelBrokingSymbolParser
 from src.utils.redis_backend import RedisBackend
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
+from src.telegram.bot import Bot
 
 
 config_path = BASE_DIR / 'data' / 'config.json'
@@ -64,6 +65,8 @@ def run_strategy1(logger: LogFacade, dry_run: bool):
     """ Run strategy1 """
     strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
     trading_accounts = config["trading_accounts"]
+    telegram_config = config["telegram"]
+    bot = Bot(config=telegram_config)
     price_monitor = PriceMonitor()
     price_monitor.setup()
     price_monitor.run_in_background()
@@ -87,6 +90,7 @@ def run_strategy1(logger: LogFacade, dry_run: bool):
                 totp_key=account["totp_key"],
                 price_monitor=price_monitor,
                 config=strategy_config,
+                bot=bot,
                 dry_run=dry_run
             )
             strategy.execute()

@@ -9,6 +9,10 @@ class BrokerApiError(Exception):
     pass
 
 
+class BrokerOrderApiError(Exception):
+    pass
+
+
 class BaseApi:
     """ Base API class used as interface to other broker API """
     pass

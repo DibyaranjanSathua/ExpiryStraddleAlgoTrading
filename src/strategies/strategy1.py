@@ -7,15 +7,18 @@ import time
 from typing import Optional, Tuple
 import datetime
 import math
+import traceback
 
 from src.strategies.base_strategy import BaseStrategy
 from src.utils import istnow
 from src.strategies.instrument import Instrument, PairInstrument, Action
-from src.price_monitor.price_monitor import PriceMonitor, PriceRegister
+from src.price_monitor.price_monitor import PriceMonitor, PriceMonitorError, PriceNotUpdatedError
 from src.utils.enum import Weekdays
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
 from src.utils.redis_backend import RedisBackend
+from src.telegram.bot import Bot
+from src.brokerapi.base_api import BrokerOrderApiError, BrokerApiError
 from dashboard.db import SessionLocal
 from dashboard.db.db_api import DBApi
 from dashboard.db.models import AlgoRunConfig
@@ -38,6 +41,7 @@ class Strategy1(BaseStrategy):
             totp_key: str,
             price_monitor: PriceMonitor,
             config: ConfigReader,
+            bot: Bot,
             dry_run: bool = False
     ):
         super(Strategy1, self).__init__(api_key, client_id, password, totp_key, dry_run=dry_run)
@@ -67,6 +71,7 @@ class Strategy1(BaseStrategy):
         self._actual_margin_per_lot: Optional[float] = None
         self._day_config: Optional[AlgoRunConfig] = None        # Database model to save run time
         self._redis_backend = RedisBackend()
+        self._bot: Bot = bot                        # Telegram bot for sending notification
 
     def entry(self) -> None:
         """ Entry logic """
@@ -103,6 +108,8 @@ class Strategy1(BaseStrategy):
         hedging_price = self.get_pair_instrument_entry_price(self._hedging)
         logger.info(f"Hedging price: {hedging_price}")
         self.place_pair_instrument_order(self._hedging)
+        # Partial entry taken. Need to exit if there is any issue place other orders.
+        self._entry_taken = True
         # Sell Straddle
         self._straddle.ce_instrument = self.get_instrument(
             strike=self._straddle_strike,
@@ -123,24 +130,30 @@ class Strategy1(BaseStrategy):
         logger.info(f"Straddle price: {straddle_price}")
         self.place_pair_instrument_order(self._straddle)
         self._entry_taken = True
+        self._bot.send_notification(f"Entry taken at {self._entry_time}")
         logger.info(f"Remaining lot to trade: {self.remaining_lot_size}")
 
     def exit(self) -> None:
         """ Exit logic """
         logger.info(f"Exiting strategy")
+        self._bot.send_notification(f"Exiting strategy")
         if self._straddle is not None:
             logger.info(f"Squaring off straddle {self._straddle}")
+            self._bot.send_notification(f"Squaring off straddle {self._straddle}")
             self._straddle.ce_instrument.action = Action.BUY
             self._straddle.pe_instrument.action = Action.BUY
             self.place_pair_instrument_order(self._straddle)
         if self._hedging is not None:
             logger.info(f"Squaring off hedges {self._hedging}")
+            self._bot.send_notification(f"Squaring off hedges {self._hedging}")
             self._hedging.ce_instrument.action = Action.SELL
             self._hedging.pe_instrument.action = Action.SELL
             self.place_pair_instrument_order(self._hedging)
         pnl = self.get_strategy_pnl()
         logger.info(f"Final PnL: {pnl}")
         self._redis_backend.set("LIVE_PNL", str(pnl))
+        self._bot.send_notification(f"PnL: {pnl}")
+        self._entry_taken = False
 
     def monitor_pnl(self, pnl: float) -> bool:
         """
@@ -148,15 +161,55 @@ class Strategy1(BaseStrategy):
         """
         if pnl > self.target:
             logger.info(f"Target {self.target} hit")
+            self._bot.send_notification(f"Target {self.target} hit")
             self.exit()
             return True
         if pnl < self.sl:
             logger.info(f"SL {self.sl} hit")
+            self._bot.send_notification(f"SL {self.sl} hit")
             self.exit()
             return True
         return False
 
     def execute(self) -> None:
+        """ Execute method with error handling to square off all open positions """
+        try:
+            self._execute()
+        except PriceMonitorError as err:
+            logger.error(err)
+            self._bot.send_notification(f"ALGO NOT WORKING. MARKET DATA FETCHING ISSUE.")
+            self._bot.send_notification(str(err))
+            if self._entry_taken:
+                self.exit()
+        except PriceNotUpdatedError as err:
+            logger.error(err)
+            self._bot.send_notification(f"ALGO NOT WORKING. MARKET DATA NOT UPDATED.")
+            self._bot.send_notification(str(err))
+            if self._entry_taken:
+                self.exit()
+        except BrokerOrderApiError as err:
+            logger.error(err)
+            self._bot.send_notification(f"ALGO NOT WORKING. ORDER PUNCHING ISSUE.")
+            if self._entry_taken:
+                self.exit()
+        except BrokerApiError as err:
+            logger.error(err)
+            self._bot.send_notification(f"ALGO NOT WORKING. BROKER API ISSUE.")
+            self._bot.send_notification(str(err))
+            if self._entry_taken:
+                self.exit()
+        except Exception as err:
+            logger.error(err)
+            logger.exception(traceback.print_exc())
+            self._bot.send_notification(f"ALGO NOT WORKING. UNKNOWN EXCEPTION.")
+            self._bot.send_notification(str(err))
+            if self._entry_taken:
+                self.exit()
+        logger.info(f"Stopping price monitoring")
+        self._price_monitor.stop_monitor = True
+        logger.info(f"Execution completed")
+
+    def _execute(self) -> None:
         """ Execute the strategy """
         power = DBApi.get_algo_power(db)
         if not power.on:
@@ -164,6 +217,7 @@ class Strategy1(BaseStrategy):
             return None
         self._redis_backend.connect()
         logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
+        self._bot.send_notification(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
         super(Strategy1, self).execute()
         now = istnow()
         self._weekday = Weekdays(now.weekday())
@@ -172,6 +226,7 @@ class Strategy1(BaseStrategy):
         self._day_config = DBApi.get_run_config_by_day(db, day=self._weekday.name.lower())
         if not self._day_config.run:
             logger.info(f"Algo System is OFF for {self._weekday.name}")
+            self._bot.send_notification(f"Algo System is OFF for {self._weekday.name}")
             return None
         logger.info(f"Initial Capital: {self.initial_capital}")
         logger.info(f"Capital to trade: {self.capital_to_trade}")
@@ -194,7 +249,7 @@ class Strategy1(BaseStrategy):
                         logger.info(f"Changing the entry time to {self._changed_entry_time}")
                 else:
                     self.entry()
-            if self.check_exit_time(now):
+            if self.check_exit_time(now) and self._entry_taken:
                 self.exit()
                 break
             if self._entry_taken:
@@ -209,7 +264,7 @@ class Strategy1(BaseStrategy):
                     self.second_shifting_registration()
                 if self._config["option_buying_shifting"][self._weekday.name.lower()]:
                     self.shift_hedging()
-                pnl = self.get_strategy_pnl()
+                pnl = self.get_strategy_pnl()       # Fetching it every 2 secs
                 logger.info(f"Lot traded: {self._lot_size}")
                 logger.info(f"Strategy PnL: {pnl}")
                 self._redis_backend.set("LIVE_PNL", str(pnl))
@@ -219,6 +274,7 @@ class Strategy1(BaseStrategy):
             # Check if manual exit is True
             if self._redis_backend.get("MANUAL_EXIT") == "True":
                 logger.info(f"Manual exit triggered")
+                self._bot.send_notification(f"Manual exit triggered")
                 self.exit()
                 break
             time.sleep(2)

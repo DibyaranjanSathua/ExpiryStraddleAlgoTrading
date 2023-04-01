@@ -21,6 +21,10 @@ class PriceMonitorError(Exception):
     pass
 
 
+class PriceNotUpdatedError(Exception):
+    pass
+
+
 @dataclass()
 class PriceRegister:
     """ Dataclass to register prices """
@@ -62,6 +66,10 @@ class PriceMonitor:
         symbol_data = self._redis_backend.get("NIFTY")
         if symbol_data is None:
             raise PriceMonitorError(f"NIFTY data is missing in redis")
+        now = int(datetime.datetime.now().timestamp())
+        price_last_updated = now - symbol_data["timestamp"]
+        if price_last_updated > 1800:       # 60 * 30 sec = 30 min
+            raise PriceNotUpdatedError("NIFTY price has not been updated in last 30 minutes")
         return symbol_data["ltp"]
 
     def get_strike_by_price(self, price: float, option_type: str) -> int:
@@ -76,6 +84,12 @@ class PriceMonitor:
             raise PriceMonitorError(
                 f"Strike {atm_strike} {option_type} price is None or ltp key is missing "
                 f"while reading from redis"
+            )
+        now = int(datetime.datetime.now().timestamp())
+        price_last_updated = now - atm_strike_price["timestamp"]
+        if price_last_updated > 1800:  # 60 * 30 sec = 30 min
+            raise PriceNotUpdatedError(
+                f"Strike {atm_strike} {option_type} price has not been updated in last 30 minutes"
             )
         atm_strike_price = atm_strike_price["ltp"]
         if price > atm_strike_price:   # Scan ITM strikes
@@ -107,6 +121,12 @@ class PriceMonitor:
         symbol_data = self._redis_backend.get(symbol)
         if symbol_data is None or "ltp" not in symbol_data:
             raise PriceMonitorError(f"{symbol} data is missing in redis")
+        now = int(datetime.datetime.now().timestamp())
+        price_last_updated = now - symbol_data["timestamp"]
+        if price_last_updated > 1800:  # 60 * 30 sec = 30 min
+            raise PriceNotUpdatedError(
+                f"Strike {symbol} price has not been updated in last 30 minutes"
+            )
         return symbol_data["ltp"]
 
     def monitor(self):
@@ -124,6 +144,12 @@ class PriceMonitor:
                 if live_price is None or "ltp" not in live_price:
                     raise PriceMonitorError(
                         f"{reg.symbol} price is None or ltp key is missing while reading from redis"
+                    )
+                now = int(datetime.datetime.now().timestamp())
+                price_last_updated = now - live_price["timestamp"]
+                if price_last_updated > 1800:  # 60 * 30 sec = 30 min
+                    raise PriceNotUpdatedError(
+                        f"Strike {reg.symbol} price has not been updated in last 30 minutes"
                     )
                 live_price = live_price["ltp"]
                 price_diff = live_price - reg.reference_price

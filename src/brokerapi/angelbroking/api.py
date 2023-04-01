@@ -13,7 +13,7 @@ import requests
 import pyotp
 from smartapi import SmartConnect, SmartWebSocket as SmartWebSocket_
 
-from src.brokerapi.base_api import BaseApi, BrokerApiError
+from src.brokerapi.base_api import BaseApi, BrokerApiError, BrokerOrderApiError
 from src.strategies.instrument import Instrument, Action
 from src.utils.redis_backend import RedisBackend
 from src.utils.logger import LogFacade
@@ -154,7 +154,7 @@ class AngelBrokingApi(BaseApi):
         self._market_feeds.setup()
         # self._market_feeds.connect()
 
-    def place_intraday_options_order(self, instrument: Instrument) -> bool:
+    def place_intraday_options_order(self, instrument: Instrument):
         """ Place intraday options order, Return True if order placed successfully else False """
         # Get the symbol details such as trading symbol and symbol token
         symbol_data = self.get_symbol_data(instrument)
@@ -172,21 +172,37 @@ class AngelBrokingApi(BaseApi):
             "variety": OrderConstants.Variety.NORMAL.value,
             "duration": "DAY",
         }
-        try:
-            response = self._smart_connect.placeOrder(orderparams=orderparams)
-            logger.info(f"Order Parameters: {orderparams}")
-            logger.info(f"Order Response: {response}")
-            instrument.order_id = response
-            logger.info(
-                f"{action} order placed successfully for {instrument} with order id "
-                f"{instrument.order_id}"
+        attempt = 3
+        while attempt > 0:
+            response = None
+            try:
+                response = self._smart_connect.placeOrder(orderparams=orderparams)
+                logger.info(f"Order Parameters: {orderparams}")
+                logger.info(f"Order Response: {response}")
+                instrument.order_id = response
+                logger.info(
+                    f"{action} order placed successfully for {instrument} with order id "
+                    f"{instrument.order_id}"
+                )
+                if response['status']:
+                    break
+            except requests.exceptions.ReadTimeout as err:
+                logger.warning(f"Failed to connect to order API. AngleBroking API issue.")
+                logger.error(err)
+                logger.exception(traceback.print_exc())
+            except Exception as err:
+                logger.error(f"Error placing order")
+                logger.error(err)
+                logger.exception(traceback.print_exc())
+            attempt -= 1
+            logger.warning(f"Order Failed. Trying again after 2 sec. Attempt left {attempt}")
+            if response is not None and response.get('message') is not None:
+                logger.error(response['message'])
+            time.sleep(2)
+        else:
+            raise BrokerOrderApiError(
+                f"Error placing order to AngelBroking API."
             )
-            return True
-        except Exception as err:
-            logger.error(f"Error placing order")
-            logger.error(err)
-            logger.exception(traceback.print_exc())
-            return False
 
     def get_symbol_data(self, instrument: Instrument):
         """ Get the broker symbol data """
@@ -200,21 +216,24 @@ class AngelBrokingApi(BaseApi):
 
     def get_order_book(self) -> list:
         """ Return order book data """
-        try:
-            response = self._smart_connect.orderBook()
-        except Exception as err:
-            logger.error(f"Error getting order book")
-            logger.error(err)
-            logger.exception(traceback.print_exc())
+        attempt = 3
+        while attempt > 0:
+            try:
+                response = self._smart_connect.orderBook()
+                if response['status']:
+                    assert 'data' in response, "data attribute is missing in SmartAPI"
+                    return response["data"]
+            except Exception as err:
+                logger.error(f"Error getting order book")
+                logger.error(err)
+                logger.exception(traceback.print_exc())
+            attempt -= 1
+            logger.warning(f"Order book Failed. Trying again after 2 sec. Attempt left {attempt}")
+            time.sleep(2)
+        else:
             raise BrokerApiError(
-                f"Error getting order book for AngelBroking API."
+                f"Error getting order book from AngelBroking API."
             )
-        if not response['status']:
-            raise BrokerApiError(
-                f"Error getting order book for AngelBroking API. {response['message']}"
-            )
-        assert 'data' in response, "data attribute is missing in SmartAPI"
-        return response["data"]
 
     @property
     def market_feeds(self) -> Optional["AngelBrokingMarketFeed"]:
