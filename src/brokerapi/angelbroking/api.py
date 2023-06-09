@@ -14,6 +14,7 @@ import pyotp
 from smartapi import SmartConnect, SmartWebSocket as SmartWebSocket_
 
 from src.brokerapi.base_api import BaseApi, BrokerApiError, BrokerOrderApiError
+from src.brokerapi.angelbroking.websocketv2 import SmartWebSocketV2
 from src.strategies.instrument import Instrument, Action
 from src.utils.redis_backend import RedisBackend
 from src.utils.logger import LogFacade
@@ -109,6 +110,7 @@ class AngelBrokingApi(BaseApi):
             raise BrokerApiError(
                 f"Error login to AngelBroking API. {response['message']}"
             )
+        self._access_token = response["data"]["jwtToken"]
         self._refresh_token = response["data"]["refreshToken"]
         self._feed_token = self._smart_connect.getfeedToken()
         self._symbol_parser = AngelBrokingSymbolParser.instance()
@@ -149,7 +151,10 @@ class AngelBrokingApi(BaseApi):
     def setup_market_feeds(self):
         """ Setup market feeds """
         self._market_feeds = AngelBrokingMarketFeed(
-            feed_token=self._feed_token, client_id=self._client_id
+            api_key=self._api_key,
+            auth_token=self._access_token,
+            feed_token=self._feed_token,
+            client_id=self._client_id
         )
         self._market_feeds.setup()
         # self._market_feeds.connect()
@@ -243,10 +248,13 @@ class AngelBrokingApi(BaseApi):
 class AngelBrokingMarketFeed:
     """ Real-time market feed data using websocket """
 
-    def __init__(self, feed_token: str, client_id: str):
+    def __init__(self, api_key: str, auth_token: str, feed_token: str, client_id: str):
+        self._api_key = api_key
+        self._auth_token = auth_token
         self._feed_token = feed_token
         self._client_id = client_id
-        self._web_socket: Optional[SmartWebSocket] = None
+        # self._web_socket: Optional[SmartWebSocket] = None
+        self._web_socket: Optional[SmartWebSocketV2] = None
         self._options_tokens = []
         self._index_tokens = []
         self._token_subscribed = []
@@ -255,11 +263,14 @@ class AngelBrokingMarketFeed:
 
     def setup(self):
         """ Setup websocket """
-        self._web_socket = SmartWebSocket(self._feed_token, self._client_id)
-        self._web_socket._on_open = self.on_open
-        self._web_socket._on_message = self.on_message
-        self._web_socket._on_error = self.on_error
-        self._web_socket._on_close = self.on_close
+        # self._web_socket = SmartWebSocket(self._feed_token, self._client_id)
+        self._web_socket = SmartWebSocketV2(
+            self._auth_token, self._api_key, self._client_id, self._feed_token
+        )
+        self._web_socket.on_open = self.on_open
+        self._web_socket.on_data = self.on_data
+        self._web_socket.on_error = self.on_error
+        self._web_socket.on_close = self.on_close
 
     def connect(self):
         """ Connect to websocket """
@@ -268,17 +279,30 @@ class AngelBrokingMarketFeed:
         self._web_socket.connect()
 
     def subscribe(self):
-        """ Subscribe to scripts """
+        """
+        Subscribe to scripts.
+        correlation_id: string
+            A 10 character alphanumeric ID client may provide which will be returned by the server in error response
+            to indicate which request generated error response.
+            Clients can use this optional ID for tracking purposes between request and corresponding error response.
+         mode: integer
+            It denotes the subscription type
+            possible values -> 1, 2 and 3
+            1 -> LTP
+            2 -> Quote
+            3 -> Snap Quote
+        """
+        correlation_id = "sathualabs"
+        mode = 1
         script = self.get_script()
+        # script = [{"exchangeType": 1, "tokens": ["26009"]}]
         if script:
             print(f"Subscribing script: {script}")
-            self._web_socket.subscribe("mw", script)
+            self._web_socket.subscribe(correlation_id, mode, script)
 
-    def on_message(self, ws, message):
+    def on_data(self, ws, message):
         print(f"Ticks: {message}")
         self.parse_save(message)
-        # self._web_socket.subscribe("mw", "nse_cm|2885&nse_cm|1594&nse_cm|11536&nse_cm|3045")
-        self.subscribe()
 
     def on_open(self, ws):
         print("On Open")
@@ -293,45 +317,56 @@ class AngelBrokingMarketFeed:
 
     def parse_save(self, message) -> None:
         """ Parse the market websocket message and save it to redis backend """
-        output = dict()
-        if type(message) == list:
-            for data in message:
-                if "tk" in data and "ltp" in data:
-                    output[data["tk"]] = data["ltp"]
-                    # Get the symbol for the token
-                    symbol = self._token_symbol_mapper[data["tk"]]
-                    # Redis. Key is symbol in format <NIFTY><DD><MON><YY><STRIKE><OPTIONTYPE>
-                    # NIFTY25AUG2217000CE and value is dict
-                    symbol_data = {
-                        "token": data["tk"],
-                        "ltp": float(data["ltp"]),
-                        "timestamp": int(datetime.datetime.now().timestamp())
-                    }
-                    self._redis_backend.set(symbol, symbol_data)
+        if type(message) == dict:
+            if "token" in message and "last_traded_price" in message:
+                symbol = self._token_symbol_mapper[message["token"]]
+                # Redis. Key is symbol in format <NIFTY><DD><MON><YY><STRIKE><OPTIONTYPE>
+                # NIFTY25AUG2217000CE and value is dict
+                symbol_data = {
+                    "token": message["token"],
+                    "ltp": float(message["last_traded_price"]/100),
+                    "timestamp": int(datetime.datetime.now().timestamp())
+                }
+                self._redis_backend.set(symbol, symbol_data)
 
-    def get_option_script(self) -> str:
-        output = ""
-        scripts = [f"nse_fo|{x}" for x in self._options_tokens]
-        if scripts:
-            self._token_subscribed += self._options_tokens
-            self._options_tokens = []
-            output = "&".join(scripts)
+    def get_option_script(self) -> dict:
+        output = {}
+        if self._options_tokens:
+            output = {"exchangeType": 2, "tokens": self._options_tokens}
         return output
 
-    def get_index_script(self) -> str:
-        output = ""
-        scripts = [f"nse_cm|{x}" for x in self._index_tokens]
-        if scripts:
-            self._token_subscribed += self._index_tokens
-            self._index_tokens = []
-            output = "&".join(scripts)
+    def get_index_script(self) -> dict:
+        """
+        Sample Value ->
+        [
+            { "exchangeType": 1, "tokens": ["10626", "5290"]},
+            {"exchangeType": 5, "tokens": [ "234230", "234235", "234219"]}
+        ]
+        exchangeType: integer
+        possible values ->
+            1 -> nse_cm
+            2 -> nse_fo
+            3 -> bse_cm
+            4 -> bse_fo
+            5 -> mcx_fo
+            7 -> ncx_fo
+            13 -> cde_fo
+        tokens: list of string
+        """
+        output = {}
+        if self._index_tokens:
+            output = {"exchangeType": 1, "tokens": self._index_tokens}
         return output
 
-    def get_script(self) -> str:
+    def get_script(self) -> list:
+        output = []
         option_script = self.get_option_script()
         index_script = self.get_index_script()
-        script = index_script + "&" + option_script
-        return script.strip("&")
+        if index_script:
+            output.append(index_script)
+        if option_script:
+            output.append(option_script)
+        return output
 
     @property
     def index_tokens(self) -> List:
@@ -480,15 +515,16 @@ class TokenSymbolMapper:
 
 
 if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
     from src import BASE_DIR
-    dotenv_path = BASE_DIR / 'env' / '.env'
-    load_dotenv(dotenv_path=dotenv_path)
-    api_key = os.environ.get("ANGEL_BROKING_API_KEY")
-    client_id = os.environ.get("ANGEL_BROKING_CLIENT_ID")
-    password = os.environ.get("ANGEL_BROKING_PASSWORD")
-    totp_key = os.environ.get("ANGEL_BROKING_TOTP_KEY")
+    from src.utils.config_reader import ConfigReader
+
+    config_path = BASE_DIR / 'data' / 'config.json'
+    config = ConfigReader(config_file_path=config_path)
+    trading_account = config["trading_accounts"][0]
+    api_key = trading_account["api_key"]
+    client_id = trading_account["client_id"]
+    password = trading_account["password"]
+    totp_key = trading_account["totp_key"]
     api = AngelBrokingApi(api_key, client_id, password, totp_key)
     api.login()
     user = api.get_user_profile()
@@ -529,9 +565,9 @@ if __name__ == "__main__":
     # print(instrument)
     # instrument = symbol_parser.get_symbol_data(
     #     ticker="NIFTY",
-    #     strike_price=17900,
+    #     strike=18000,
     #     expiry=symbol_parser.current_week_expiry,
-    #     option_type="PE"
+    #     option_type="CE"
     # )
     # print(instrument)
     # print(symbol_parser.nifty_index_token)

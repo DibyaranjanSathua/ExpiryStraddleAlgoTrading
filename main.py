@@ -125,8 +125,10 @@ def main():
     if args.market_feeds:
         if args.option_type == "CE":
             market_feed_logger: LogFacade = LogFacade.get_logger("ce_market_feed_main")
-        else:
+        elif args.option_type == "PE":
             market_feed_logger: LogFacade = LogFacade.get_logger("pe_market_feed_main")
+        else:
+            market_feed_logger: LogFacade = LogFacade.get_logger("market_feed_main")
         try:
             run_market_feed(market_feed_logger, args.option_type)
         except Exception as err:

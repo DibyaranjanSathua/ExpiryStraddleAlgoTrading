@@ -67,10 +67,10 @@ class MarketFeeds:
                 pe_strikes = [atm - (50 * x) for x in range(30)]  # 35 PE strikes (ATM + OTM)
                 pe_strikes += [atm + (50 * x) for x in range(1, 20)]  # 20 PE strikes ITM
         else:
-            ce_strikes = [atm + (50 * x) for x in range(15)]    # 15 CE strikes (ATM + OTM)
-            ce_strikes += [atm - (50 * x) for x in range(1, 10)]  # 10 CE strikes ITM
-            pe_strikes = [atm - (50 * x) for x in range(15)]    # 15 PE strikes (ATM + OTM)
-            pe_strikes += [atm + (50 * x) for x in range(1, 10)]    # 10 PE strikes ITM
+            ce_strikes = [atm + (50 * x) for x in range(30)]    # 30 CE strikes (ATM + OTM)
+            ce_strikes += [atm - (50 * x) for x in range(1, 20)]  # 20 CE strikes ITM
+            pe_strikes = [atm - (50 * x) for x in range(30)]    # 30 PE strikes (ATM + OTM)
+            pe_strikes += [atm + (50 * x) for x in range(1, 20)]    # 20 PE strikes ITM
         # Get the current expiry
         current_expiry = self._symbol_parser.current_week_expiry
         self._option_tokens = self.get_option_tokens(
@@ -134,9 +134,9 @@ if __name__ == "__main__":
         api_key=account["api_key"],
         client_id=account["client_id"],
         password=account["password"],
+        totp_key=account["totp_key"],
         symbol_parser=symbol_parser,
-        only_ce_or_pe=True,
-        option_type=option_type
+        only_ce_or_pe=False
     )
     market_feeds.setup()
 
