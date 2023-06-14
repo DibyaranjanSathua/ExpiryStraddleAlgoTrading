@@ -189,7 +189,8 @@ class AngelBrokingApi(BaseApi):
                     f"{action} order placed successfully for {instrument} with order id "
                     f"{instrument.order_id}"
                 )
-                if response['status']:
+                if (type(response) == str and response) or \
+                        (type(response) == dict and response['status']):
                     break
             except requests.exceptions.ReadTimeout as err:
                 logger.warning(f"Failed to connect to order API. AngleBroking API issue.")
@@ -201,7 +202,8 @@ class AngelBrokingApi(BaseApi):
                 logger.exception(traceback.print_exc())
             attempt -= 1
             logger.warning(f"Order Failed. Trying again after 2 sec. Attempt left {attempt}")
-            if response is not None and response.get('message') is not None:
+            if response is not None and type(response) == dict and \
+                    response.get('message') is not None:
                 logger.error(response['message'])
             time.sleep(2)
         else:
@@ -542,16 +544,16 @@ if __name__ == "__main__":
     # print(symbol_parser.current_week_expiry)
     # symbol_data = symbol_parser.get_symbol_data(
     #     ticker="NIFTY",
-    #     strike=18500,
+    #     strike=18900,
     #     expiry=symbol_parser.current_week_expiry,
     #     option_type="CE"
     # )
     # instrument = Instrument(
-    #         action=Action.BUY,
+    #         action=Action.SELL,
     #         lot_size=50,
     #         expiry=symbol_parser.current_week_expiry,
     #         option_type="CE",
-    #         strike=18500,
+    #         strike=18900,
     #         index="NIFTY",
     #         entry=datetime.datetime.now(),
     #         price=0,
