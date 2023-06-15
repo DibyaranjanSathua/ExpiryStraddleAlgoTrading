@@ -133,6 +133,21 @@ class Strategy1(BaseStrategy):
         self._bot.send_notification(f"Entry taken at {self._entry_time}")
         logger.info(f"Remaining lot to trade: {self.remaining_lot_size}")
 
+    def exit_during_exception(self) -> None:
+        try:
+            self.exit()
+        except BrokerOrderApiError as err:
+            logger.error(err)
+            self._bot.send_notification(f"NOT ABLE TO SQUARE OFF ORDER. ORDER PUNCHING ISSUE.")
+            self._bot.send_notification(str(err))
+            self._bot.send_notification(f"MANUAL EXIT")
+        except Exception as err:
+            logger.error(err)
+            logger.exception(traceback.print_exc())
+            self._bot.send_notification(f"NOT ABLE TO SQUARE OFF ORDER. UNKNOWN EXCEPTION.")
+            self._bot.send_notification(str(err))
+            self._bot.send_notification(f"MANUAL EXIT")
+
     def exit(self) -> None:
         """ Exit logic """
         logger.info(f"Exiting strategy")
@@ -180,31 +195,32 @@ class Strategy1(BaseStrategy):
             self._bot.send_notification(f"ALGO NOT WORKING. MARKET DATA FETCHING ISSUE.")
             self._bot.send_notification(str(err))
             if self._entry_taken:
-                self.exit()
+                self.exit_during_exception()
         except PriceNotUpdatedError as err:
             logger.error(err)
             self._bot.send_notification(f"ALGO NOT WORKING. MARKET DATA NOT UPDATED.")
             self._bot.send_notification(str(err))
             if self._entry_taken:
-                self.exit()
+                self.exit_during_exception()
         except BrokerOrderApiError as err:
             logger.error(err)
             self._bot.send_notification(f"ALGO NOT WORKING. ORDER PUNCHING ISSUE.")
+            self._bot.send_notification(str(err))
             if self._entry_taken:
-                self.exit()
+                self.exit_during_exception()
         except BrokerApiError as err:
             logger.error(err)
             self._bot.send_notification(f"ALGO NOT WORKING. BROKER API ISSUE.")
             self._bot.send_notification(str(err))
             if self._entry_taken:
-                self.exit()
+                self.exit_during_exception()
         except Exception as err:
             logger.error(err)
             logger.exception(traceback.print_exc())
             self._bot.send_notification(f"ALGO NOT WORKING. UNKNOWN EXCEPTION.")
             self._bot.send_notification(str(err))
             if self._entry_taken:
-                self.exit()
+                self.exit_during_exception()
         logger.info(f"Stopping price monitoring")
         self._price_monitor.stop_monitor = True
         logger.info(f"Execution completed")
