@@ -150,6 +150,8 @@ class Strategy1(BaseStrategy):
 
     def exit(self) -> None:
         """ Exit logic """
+        logger.info(f"Stopping price monitoring")
+        self._price_monitor.stop_monitor = True
         logger.info(f"Exiting strategy")
         self._bot.send_notification(f"Exiting strategy")
         if self._straddle is not None:
