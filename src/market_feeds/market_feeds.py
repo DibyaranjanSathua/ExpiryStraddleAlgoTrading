@@ -99,7 +99,7 @@ class MarketFeeds:
                 expiry=expiry,
                 option_type="CE"
             )
-            if "token" in data:
+            if data is not None and "token" in data:
                 option_tokens.append(data['token'])
                 self._token_symbol_mapper[data['token']] = f"NIFTY{date_str}{strike}CE"
 
@@ -110,7 +110,7 @@ class MarketFeeds:
                 expiry=expiry,
                 option_type="PE"
             )
-            if "token" in data:
+            if data is not None and "token" in data:
                 option_tokens.append(data['token'])
                 self._token_symbol_mapper[data['token']] = f"NIFTY{date_str}{strike}PE"
         return option_tokens
