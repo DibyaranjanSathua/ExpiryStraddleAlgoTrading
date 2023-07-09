@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import datetime
 import math
 import traceback
+import threading
 
 from src.strategies.base_strategy import BaseStrategy
 from src.utils import istnow
@@ -72,6 +73,7 @@ class Strategy1(BaseStrategy):
         self._day_config: Optional[AlgoRunConfig] = None        # Database model to save run time
         self._redis_backend = RedisBackend()
         self._bot: Bot = bot                        # Telegram bot for sending notification
+        self._lock: threading.Lock = threading.Lock()
 
     def entry(self) -> None:
         """ Entry logic """
@@ -271,9 +273,10 @@ class Strategy1(BaseStrategy):
                 self.exit()
                 break
             if self._entry_taken:
-                if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded and \
-                        self.remaining_lot_size > 0:
-                    self.trade_remaining_lot()
+                with self._lock:
+                    if self.time_to_trade_remaining_lot(now) and not self._remaining_lot_traded \
+                            and self.remaining_lot_size > 0:
+                        self.trade_remaining_lot()
                 if not self._first_shifting:
                     # Logic for first shifting
                     self.first_shifting_registration()
@@ -316,9 +319,9 @@ class Strategy1(BaseStrategy):
                     symbol="NIFTY",
                     reference_price=self._market_price,
                     up_point=up_point,
-                    up_func=self.shift_straddle,
+                    up_func=self.thread_safe_shift_straddle,
                     down_point=down_point,
-                    down_func=self.shift_straddle
+                    down_func=self.thread_safe_shift_straddle
                 )
                 self._price_monitor_register = True
         else:
@@ -333,9 +336,9 @@ class Strategy1(BaseStrategy):
                     symbol="NIFTY",
                     reference_price=self._market_price,
                     up_point=up_point,
-                    up_func=self.shift_straddle,
+                    up_func=self.thread_safe_shift_straddle,
                     down_point=down_point,
-                    down_func=self.shift_straddle
+                    down_func=self.thread_safe_shift_straddle
                 )
                 self._price_monitor_register = True
 
@@ -359,9 +362,9 @@ class Strategy1(BaseStrategy):
                     symbol="NIFTY",
                     reference_price=self._market_price,
                     up_point=35,
-                    up_func=self.shift_straddle,
+                    up_func=self.thread_safe_shift_straddle,
                     down_point=35,
-                    down_func=self.shift_straddle
+                    down_func=self.thread_safe_shift_straddle
                 )
                 self._price_monitor_register = True
         else:
@@ -375,12 +378,17 @@ class Strategy1(BaseStrategy):
                     symbol="NIFTY",
                     reference_price=self._market_price,
                     up_point=45,
-                    up_func=self.shift_straddle,
+                    up_func=self.thread_safe_shift_straddle,
                     down_point=45,
-                    down_func=self.shift_straddle
+                    down_func=self.thread_safe_shift_straddle
                 )
                 self._price_monitor_register = True
 
+    def thread_safe_shift_straddle(self):
+        """ Thread safe """
+        with self._lock:
+            self.shift_straddle()
+            
     def shift_straddle(self):
         """ Shift straddle """
         if self._straddle is None:
