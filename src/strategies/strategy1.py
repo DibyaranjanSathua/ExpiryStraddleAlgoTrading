@@ -74,6 +74,8 @@ class Strategy1(BaseStrategy):
         self._redis_backend = RedisBackend()
         self._bot: Bot = bot                        # Telegram bot for sending notification
         self._lock: threading.Lock = threading.Lock()
+        # Set this to True when straddle reach one of the hedge
+        self._stop_shifting_hedges: bool = False
 
     def entry(self) -> None:
         """ Entry logic """
@@ -283,7 +285,8 @@ class Strategy1(BaseStrategy):
                 else:
                     # Second shifting onwards
                     self.second_shifting_registration()
-                if self._config["option_buying_shifting"][self._weekday.name.lower()]:
+                if self._config["option_buying_shifting"][self._weekday.name.lower()] and \
+                        not self._stop_shifting_hedges:
                     self.shift_hedging()
                 pnl = self.get_strategy_pnl()       # Fetching it every 2 secs
                 logger.info(f"Lot traded: {self._lot_size}")
@@ -425,6 +428,7 @@ class Strategy1(BaseStrategy):
             self.place_pair_instrument_order(self._straddle)
             self._straddle = None
             self._straddle_strike = 0
+            self._stop_shifting_hedges = True
             return None
 
         self._straddle_strike = current_straddle_strike
