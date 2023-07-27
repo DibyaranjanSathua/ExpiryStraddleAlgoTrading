@@ -88,11 +88,11 @@ class Strategy1(BaseStrategy):
         self._lot_size = self.initial_lot_size
         logger.info(f"Initial lot size: {self._lot_size}")
         # Buy hedging
-        ce_buy_strike = self._price_monitor.get_strike_by_price(
-            price=self.ce_buy_price, option_type="CE"
+        ce_buy_strike = self._price_monitor.get_strike_by_with_less_price(
+            price=5.5, option_type="CE"
         )
-        pe_buy_strike = self._price_monitor.get_strike_by_price(
-            price=self.pe_buy_price, option_type="PE"
+        pe_buy_strike = self._price_monitor.get_strike_by_with_less_price(
+            price=5.5, option_type="PE"
         )
         self._hedging.ce_instrument = self.get_instrument(
             strike=ce_buy_strike,

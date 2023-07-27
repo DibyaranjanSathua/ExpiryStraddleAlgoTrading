@@ -116,6 +116,48 @@ class PriceMonitor:
                 selected_strike = next_strike
         return selected_strike
 
+    def get_strike_by_with_less_price(self, price: float, option_type: str) -> int:
+        """ Return the strike with price less then the given price """
+        atm_strike = self.get_atm_strike()
+        selected_strike = atm_strike
+        step = 50 if option_type == "CE" else -50
+        atm_strike_price = self._redis_backend.get(
+            self.get_symbol(strike=atm_strike, option_type=option_type)
+        )
+        if atm_strike_price is None or "ltp" not in atm_strike_price:
+            raise PriceMonitorError(
+                f"Strike {atm_strike} {option_type} price is None or ltp key is missing "
+                f"while reading from redis"
+            )
+        now = int(datetime.datetime.now().timestamp())
+        price_last_updated = now - atm_strike_price["timestamp"]
+        if price_last_updated > 1800:  # 60 * 30 sec = 30 min
+            raise PriceNotUpdatedError(
+                f"Strike {atm_strike} {option_type} price has not been updated in last 30 minutes"
+            )
+        atm_strike_price = atm_strike_price["ltp"]
+        if price > atm_strike_price:   # Scan ITM strikes
+            step *= -1
+
+        next_strike = atm_strike
+        while True:
+            next_strike += step
+            next_strike_price = self._redis_backend.get(
+                self.get_symbol(strike=next_strike, option_type=option_type)
+            )
+            # We are done with the strikes
+            if next_strike_price is None:
+                break
+            if "ltp" not in next_strike_price:
+                raise PriceMonitorError(
+                    f"Strike {atm_strike} {option_type} price ltp key is missing "
+                    f"while reading from redis"
+                )
+            next_strike_price = next_strike_price["ltp"]
+            if next_strike_price < price:
+                return next_strike
+        return selected_strike
+
     def get_price_by_symbol(self, symbol: str):
         """ Return the price of a symbol """
         symbol_data = self._redis_backend.get(symbol)
