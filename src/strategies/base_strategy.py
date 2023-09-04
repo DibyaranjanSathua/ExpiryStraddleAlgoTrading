@@ -6,13 +6,9 @@ Created on:     22/08/22, 9:29 pm
 from typing import Optional
 from abc import ABC, abstractmethod
 import datetime
-import os
 
-from dotenv import load_dotenv
-
-from src import BASE_DIR
 from src.brokerapi.angelbroking import AngelBrokingApi
-from src.strategies.instrument import Instrument, PairInstrument, Action
+from src.strategies.instrument import Instrument, PairInstrument
 from src.utils.logger import LogFacade
 
 

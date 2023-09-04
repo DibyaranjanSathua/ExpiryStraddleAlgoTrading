@@ -11,6 +11,7 @@ import threading
 
 from src.brokerapi.angelbroking.api import AngelBrokingSymbolParser
 from src.utils.redis_backend import RedisBackend
+from src.utils import StrategyTicker
 from src.utils.logger import LogFacade
 
 
@@ -49,6 +50,7 @@ class PriceMonitor:
         self._expiry: Optional[datetime.date] = None
         self._expiry_str = ""
         self.stop_monitor = False
+        self._ticker = StrategyTicker.get_instance().ticker
 
     def setup(self):
         """ Setup required class for price monitor """
@@ -59,17 +61,19 @@ class PriceMonitor:
 
     def get_atm_strike(self):
         """ Return ATM strike """
-        return self.get_nearest_50_strike(self.get_nifty_value())
+        return self.get_nearest_50_strike(self.get_index_value())
 
-    def get_nifty_value(self) -> float:
-        """ Return nifty value """
-        symbol_data = self._redis_backend.get("NIFTY")
+    def get_index_value(self) -> float:
+        """ Return index value """
+        symbol_data = self._redis_backend.get(self._ticker)
         if symbol_data is None:
-            raise PriceMonitorError(f"NIFTY data is missing in redis")
+            raise PriceMonitorError(f"{self._ticker} data is missing in redis")
         now = int(datetime.datetime.now().timestamp())
         price_last_updated = now - symbol_data["timestamp"]
         if price_last_updated > 1800:       # 60 * 30 sec = 30 min
-            raise PriceNotUpdatedError("NIFTY price has not been updated in last 30 minutes")
+            raise PriceNotUpdatedError(
+                f"{self._ticker} price has not been updated in last 30 minutes"
+            )
         return symbol_data["ltp"]
 
     def get_strike_by_price(self, price: float, option_type: str) -> int:
@@ -244,7 +248,7 @@ class PriceMonitor:
         cls.REGISTER.remove(price_register)
 
     def get_symbol(self, strike: int, option_type: str) -> str:
-        return f"NIFTY{self._expiry_str}{strike}{option_type}"
+        return f"{self._ticker}{self._expiry_str}{strike}{option_type}"
 
     @staticmethod
     def get_nearest_50_strike(index: float) -> int:

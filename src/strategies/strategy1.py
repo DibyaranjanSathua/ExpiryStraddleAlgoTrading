@@ -14,6 +14,7 @@ from src.strategies.base_strategy import BaseStrategy
 from src.utils import istnow
 from src.strategies.instrument import Instrument, PairInstrument, Action
 from src.price_monitor.price_monitor import PriceMonitor, PriceMonitorError, PriceNotUpdatedError
+from src.utils import StrategyTicker
 from src.utils.enum import Weekdays
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
@@ -42,7 +43,7 @@ class Strategy1(BaseStrategy):
             totp_key: str,
             price_monitor: PriceMonitor,
             config: ConfigReader,
-            bot: Bot,
+            bot: Optional[Bot],
             dry_run: bool = False
     ):
         super(Strategy1, self).__init__(api_key, client_id, password, totp_key, dry_run=dry_run)
@@ -76,12 +77,13 @@ class Strategy1(BaseStrategy):
         self._lock: threading.Lock = threading.Lock()
         # Set this to True when straddle reach one of the hedge
         self._stop_shifting_hedges: bool = False
+        self._ticker = StrategyTicker.get_instance().ticker
 
     def entry(self) -> None:
         """ Entry logic """
         self._entry_time = istnow()
         logger.info(f"Entry taken at {self._entry_time}")
-        self._market_price = self._price_monitor.get_nifty_value()
+        self._market_price = self._price_monitor.get_index_value()
         self._straddle_strike = self._price_monitor.get_atm_strike()
         logger.info(f"Market price: {self._market_price}")
         logger.info(f"ATM strike: {self._straddle_strike}")
@@ -319,7 +321,7 @@ class Strategy1(BaseStrategy):
                     f"{self._market_price + up_point} or below {self._market_price - down_point}"
                 )
                 PriceMonitor.register(
-                    symbol="NIFTY",
+                    symbol=self._ticker,
                     reference_price=self._market_price,
                     up_point=up_point,
                     up_func=self.thread_safe_shift_straddle,
@@ -336,7 +338,7 @@ class Strategy1(BaseStrategy):
                     f"{self._market_price + up_point} or below {self._market_price - down_point}"
                 )
                 PriceMonitor.register(
-                    symbol="NIFTY",
+                    symbol=self._ticker,
                     reference_price=self._market_price,
                     up_point=up_point,
                     up_func=self.thread_safe_shift_straddle,
@@ -362,7 +364,7 @@ class Strategy1(BaseStrategy):
                     f"{self._market_price + 35} or below {self._market_price - 35}"
                 )
                 PriceMonitor.register(
-                    symbol="NIFTY",
+                    symbol=self._ticker,
                     reference_price=self._market_price,
                     up_point=35,
                     up_func=self.thread_safe_shift_straddle,
@@ -378,7 +380,7 @@ class Strategy1(BaseStrategy):
                     f"{self._market_price + 45} or below {self._market_price - 45}"
                 )
                 PriceMonitor.register(
-                    symbol="NIFTY",
+                    symbol=self._ticker,
                     reference_price=self._market_price,
                     up_point=45,
                     up_func=self.thread_safe_shift_straddle,
@@ -396,7 +398,7 @@ class Strategy1(BaseStrategy):
         """ Shift straddle """
         if self._straddle is None:
             return None
-        self._market_price = self._price_monitor.get_nifty_value()
+        self._market_price = self._price_monitor.get_index_value()
         current_straddle_strike = self._price_monitor.get_atm_strike()
         if current_straddle_strike == self._straddle_strike:
             logger.info(
@@ -599,7 +601,7 @@ class Strategy1(BaseStrategy):
         """
         now = istnow()
         logger.info(f"Trading remaining {self.remaining_lot_size} lot at {now}")
-        current_market_price = self._price_monitor.get_nifty_value()
+        current_market_price = self._price_monitor.get_index_value()
         current_straddle_strike = self._price_monitor.get_atm_strike()
         logger.info(f"Market price: {current_market_price}")
         logger.info(f"ATM strike: {current_straddle_strike}")
@@ -734,7 +736,7 @@ class Strategy1(BaseStrategy):
             expiry=self._price_monitor.expiry,
             option_type=option_type,
             strike=strike,
-            index="NIFTY",
+            index=self._ticker,
             entry=entry,
             price=0,
             order_id=""
@@ -777,8 +779,7 @@ class Strategy1(BaseStrategy):
             pnl *= -1
         return round(pnl, 2)
 
-    @staticmethod
-    def orderbook_data_to_instrument(orderbook_data: dict) -> Instrument:
+    def orderbook_data_to_instrument(self, orderbook_data: dict) -> Instrument:
         """ Convert a orderbook data to Instrument object """
         expiry = datetime.datetime.strptime(orderbook_data["expirydate"], "%d%b%Y").date()
         entry = datetime.datetime.strptime(orderbook_data["updatetime"], "%d-%b-%Y %H:%M:%S")
@@ -788,7 +789,7 @@ class Strategy1(BaseStrategy):
             expiry=expiry,
             option_type=orderbook_data["optiontype"],
             strike=int(orderbook_data["strikeprice"]),
-            index="NIFTY",
+            index=self._ticker,
             entry=entry,
             price=Strategy1.get_instrument_price_from_orderbook(orderbook_data),
             order_id=orderbook_data["orderid"]
@@ -1044,6 +1045,7 @@ if __name__ == "__main__":
         totp_key=account["totp_key"],
         price_monitor=price_monitor,
         config=strategy_config,
+        bot=None,
         dry_run=True
     )
     strategy.execute()

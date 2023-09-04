@@ -16,6 +16,8 @@ from src.utils.redis_backend import RedisBackend
 from src.utils.config_reader import ConfigReader
 from src.utils.logger import LogFacade
 from src.telegram.bot import Bot
+from src.utils.enum import Weekdays
+from src.utils import StrategyTicker, istnow
 
 
 config_path = BASE_DIR / 'data' / 'config.json'
@@ -27,7 +29,7 @@ def clean_up():
     # Connect to redis and clean up all nifty keys so that we don't end up using some old keys
     redis_backend = RedisBackend()
     redis_backend.connect()
-    redis_backend.cleanup(pattern="NIFTY*")
+    redis_backend.cleanup(pattern=f"{STRATEGY_TICKER}*")
 
 
 def run_market_feed(market_feed_logger: LogFacade, option_type: Optional[str] = None):
@@ -63,9 +65,12 @@ def run_market_feed(market_feed_logger: LogFacade, option_type: Optional[str] = 
 
 def run_strategy1(logger: LogFacade, dry_run: bool):
     """ Run strategy1 """
+    now = istnow()
+    weekday = Weekdays(now.weekday())
     strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
     trading_accounts = config["trading_accounts"]
     telegram_config = config["telegram"]
+    StrategyTicker.get_instance().ticker = strategy_config["ticker"][weekday.name.lower()]
     bot = Bot(config=telegram_config)
     price_monitor = PriceMonitor()
     price_monitor.setup()

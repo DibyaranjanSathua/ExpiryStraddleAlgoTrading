@@ -395,10 +395,13 @@ class AngelBrokingSymbolParser:
     def __init__(self):
         self._nifty_instruments: List[Dict] = []
         self._banknifty_instruments: List[Dict] = []
+        self._finnifty_instruments: List[Dict] = []
         self._nifty_current_week_expiry_instrument: List[Dict] = []
         self._banknifty_current_week_expiry_instruments: List[Dict] = []
+        self._finnifty_current_week_expiry_instrument: List[Dict] = []
         self._nifty_index_token = ""
         self._banknifty_index_token = ""
+        self._finnifty_index_token = ""
         self._expiry = set()
         self._current_week_expiry: Optional[datetime.date] = None
 
@@ -417,6 +420,7 @@ class AngelBrokingSymbolParser:
             data = response.json()
             self._nifty_instruments = [x for x in data if x["name"] == "NIFTY"]
             self._banknifty_instruments = [x for x in data if x["name"] == "BANKNIFTY"]
+            self._finnifty_instruments = [x for x in data if x["name"] == "FINNIFTY"]
         self._expiry = set(
             self.get_date_obj(x["expiry"]) for x in self._nifty_instruments if x["expiry"]
         )
@@ -430,6 +434,10 @@ class AngelBrokingSymbolParser:
             x for x in self._banknifty_instruments
             if x["expiry"] == self.get_date_str(self._current_week_expiry)
         ]
+        self._finnifty_current_week_expiry_instrument = [
+            x for x in self._finnifty_instruments
+            if x["expiry"] == self.get_date_str(self._current_week_expiry)
+        ]
         # Get the index token. By default we will subscribe for index tokens
         self._nifty_index_token = next(
             (x["token"] for x in self._nifty_instruments if x["symbol"] == "NIFTY"),
@@ -437,6 +445,10 @@ class AngelBrokingSymbolParser:
         )
         self._banknifty_index_token = next(
             (x["token"] for x in self._banknifty_instruments if x["symbol"] == "BANKNIFTY"),
+            None
+        )
+        self._finnifty_index_token = next(
+            (x["token"] for x in self._finnifty_instruments if x["symbol"] == "Nifty Fin Service"),
             None
         )
 
@@ -458,6 +470,8 @@ class AngelBrokingSymbolParser:
             instruments = self._nifty_instruments
         elif ticker == "BANKNIFTY":
             instruments = self._banknifty_instruments
+        elif ticker == "FINNIFTY":
+            instruments = self._finnifty_instruments
         return next(
             (
                 x for x in instruments
@@ -491,6 +505,10 @@ class AngelBrokingSymbolParser:
     @property
     def banknifty_index_token(self) -> str:
         return self._banknifty_index_token
+
+    @property
+    def finnifty_index_token(self) -> str:
+        return self._finnifty_index_token
 
     @property
     def symbol_master_file(self) -> str:
@@ -538,16 +556,17 @@ if __name__ == "__main__":
     # data = api.get_ltp_data(trading_symbol="NIFTY", symbol_token="26000", exhange="NSE")
     # print(data)
     # api.setup_market_feeds()
-    # symbol_parser = AngelBrokingSymbolParser.instance()
+    symbol_parser = AngelBrokingSymbolParser.instance()
     # symbol_parser1 = AngelBrokingSymbolParser.instance()
     # print(id(symbol_parser) == id(symbol_parser1))
     # print(symbol_parser.current_week_expiry)
-    # symbol_data = symbol_parser.get_symbol_data(
-    #     ticker="NIFTY",
-    #     strike=18900,
-    #     expiry=symbol_parser.current_week_expiry,
-    #     option_type="CE"
-    # )
+    symbol_data = symbol_parser.get_symbol_data(
+        ticker="FINNIFTY",
+        strike=18900,
+        expiry=symbol_parser.current_week_expiry,
+        option_type="CE"
+    )
+    print(symbol_parser.finnifty_index_token)
     # instrument = Instrument(
     #         action=Action.SELL,
     #         lot_size=50,

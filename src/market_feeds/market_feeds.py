@@ -8,6 +8,7 @@ import datetime
 
 from src.brokerapi.angelbroking import AngelBrokingApi, AngelBrokingSymbolParser, \
     TokenSymbolMapper
+from src.utils import StrategyTicker
 
 
 class MarketFeeds:
@@ -40,6 +41,7 @@ class MarketFeeds:
         self._symbol_parser = symbol_parser
         self._option_tokens = []        # Stores the token for subscribing for web socket data
         self._token_symbol_mapper = TokenSymbolMapper()
+        self._ticker = StrategyTicker.get_instance().ticker
 
     def setup(self):
         """ Setup required data for live market feeds """
@@ -48,14 +50,17 @@ class MarketFeeds:
         self._api.get_user_profile()
         # Get the nifty ltp to determine the ATM price
         data = self._api.get_ltp_data(
-            trading_symbol="NIFTY",
+            trading_symbol=self._ticker,
             symbol_token=self._symbol_parser.nifty_index_token,
             exchange="NSE"
         )
-        # Added nifty index to token to symbol mapper
-        self._token_symbol_mapper[self._symbol_parser.nifty_index_token] = "NIFTY"
-        nifty_index = data["ltp"]
-        atm = self.get_nearest_50_strike(nifty_index)
+        # Added index to token to symbol mapper
+        if self._ticker == "NIFTY":
+            self._token_symbol_mapper[self._symbol_parser.nifty_index_token] = "NIFTY"
+        elif self._ticker == "FINNIFTY":
+            self._token_symbol_mapper[self._symbol_parser.finnifty_index_token] = "FINNIFTY"
+        index = data["ltp"]
+        atm = self.get_nearest_50_strike(index)
         pe_strikes = None
         ce_strikes = None
         if self._only_ce_or_pe:
@@ -94,25 +99,25 @@ class MarketFeeds:
         date_str = expiry.strftime("%d%b%y").upper()
         for strike in ce_strikes or []:
             data = self._symbol_parser.get_symbol_data(
-                ticker="NIFTY",
+                ticker=self._ticker,
                 strike=strike,
                 expiry=expiry,
                 option_type="CE"
             )
             if data is not None and "token" in data:
                 option_tokens.append(data['token'])
-                self._token_symbol_mapper[data['token']] = f"NIFTY{date_str}{strike}CE"
+                self._token_symbol_mapper[data['token']] = f"{self._ticker}{date_str}{strike}CE"
 
         for strike in pe_strikes or []:
             data = self._symbol_parser.get_symbol_data(
-                ticker="NIFTY",
+                ticker=self._ticker,
                 strike=strike,
                 expiry=expiry,
                 option_type="PE"
             )
             if data is not None and "token" in data:
                 option_tokens.append(data['token'])
-                self._token_symbol_mapper[data['token']] = f"NIFTY{date_str}{strike}PE"
+                self._token_symbol_mapper[data['token']] = f"{self._ticker}{date_str}{strike}PE"
         return option_tokens
 
     @staticmethod
