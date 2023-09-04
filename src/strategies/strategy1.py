@@ -33,7 +33,6 @@ db = SessionLocal()
 class Strategy1(BaseStrategy):
     """ Expiry day strategy for shorting straddle """
     STRATEGY_CODE: str = "strategy1"
-    QUANTITY: int = 50
 
     def __init__(
             self,
@@ -78,6 +77,7 @@ class Strategy1(BaseStrategy):
         # Set this to True when straddle reach one of the hedge
         self._stop_shifting_hedges: bool = False
         self._ticker = StrategyTicker.get_instance().ticker
+        self._quantity = StrategyTicker.get_instance().quantity
 
     def entry(self) -> None:
         """ Entry logic """
@@ -689,11 +689,11 @@ class Strategy1(BaseStrategy):
         self._lot_size += self.remaining_lot_size
         logger.info(f"Final lot size after trading remaining lot: {self._lot_size}")
         # Update lot size for straddle
-        self._straddle.ce_instrument.lot_size = self._lot_size * self.QUANTITY
-        self._straddle.pe_instrument.lot_size = self._lot_size * self.QUANTITY
+        self._straddle.ce_instrument.lot_size = self._lot_size * self._quantity
+        self._straddle.pe_instrument.lot_size = self._lot_size * self._quantity
         # Update lot size for hedging
-        self._hedging.ce_instrument.lot_size = self._lot_size * self.QUANTITY
-        self._hedging.pe_instrument.lot_size = self._lot_size * self.QUANTITY
+        self._hedging.ce_instrument.lot_size = self._lot_size * self._quantity
+        self._hedging.pe_instrument.lot_size = self._lot_size * self._quantity
         self._remaining_lot_traded = True
 
     def buy_remaining_lot_hedging(self):
@@ -720,8 +720,8 @@ class Strategy1(BaseStrategy):
         logger.info(f"Hedging price: {hedging_price}")
         self.place_pair_instrument_order(remaining_lot_hedging)
         # Update lot size for hedging
-        self._hedging.ce_instrument.lot_size += self.remaining_lot_size * self.QUANTITY
-        self._hedging.pe_instrument.lot_size += self.remaining_lot_size * self.QUANTITY
+        self._hedging.ce_instrument.lot_size += self.remaining_lot_size * self._quantity
+        self._hedging.pe_instrument.lot_size += self.remaining_lot_size * self._quantity
 
     def get_instrument(
             self,
@@ -734,7 +734,7 @@ class Strategy1(BaseStrategy):
         """ Return a CE instrument """
         instrument = Instrument(
             action=action,
-            lot_size=lot_size * self.QUANTITY,
+            lot_size=lot_size * self._quantity,
             expiry=self._price_monitor.expiry,
             option_type=option_type,
             strike=strike,

@@ -10,10 +10,10 @@ import pytz
 # # Global variable used to define the ticker. NIFTY, BANKNIFTY, FINNIFTY
 class StrategyTicker:
     __instance = None
-    __flag = False
 
     def __init__(self):
         self._ticker = "NIFTY"
+        self._quantity = 50
 
     @classmethod
     def get_instance(cls):
@@ -27,10 +27,15 @@ class StrategyTicker:
 
     @ticker.setter
     def ticker(self, value):
-        if self.__flag:
-            raise ValueError("ticker can be set only once")
         self._ticker = value
-        self.__flag = True
+
+    @property
+    def quantity(self):
+        return self._quantity
+
+    @quantity.setter
+    def quantity(self, value):
+        self._quantity = value
 
 
 def utc2ist(dt: datetime.datetime):

@@ -70,7 +70,10 @@ def run_strategy1(logger: LogFacade, dry_run: bool):
     strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
     trading_accounts = config["trading_accounts"]
     telegram_config = config["telegram"]
-    StrategyTicker.get_instance().ticker = strategy_config["ticker"][weekday.name.lower()]
+    ticker_data = strategy_config["ticker"][weekday.name.lower()]
+    ticker_inst = StrategyTicker.get_instance()
+    ticker_inst.ticker = ticker_data["symbol"]
+    ticker_inst.quantity = ticker_data["quantity"]
     bot = Bot(config=telegram_config)
     price_monitor = PriceMonitor()
     price_monitor.setup()
