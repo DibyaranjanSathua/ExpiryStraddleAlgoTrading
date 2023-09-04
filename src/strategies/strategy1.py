@@ -240,8 +240,10 @@ class Strategy1(BaseStrategy):
             logger.info(f"Algo System is OFF")
             return None
         self._redis_backend.connect()
-        logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
-        self._bot.send_notification(f"Starting execution of strategy {Strategy1.STRATEGY_CODE}")
+        logger.info(f"Starting execution of strategy {Strategy1.STRATEGY_CODE} for {self._ticker}")
+        self._bot.send_notification(
+            f"Starting execution of strategy {Strategy1.STRATEGY_CODE} for {self._ticker}"
+        )
         super(Strategy1, self).execute()
         now = istnow()
         self._weekday = Weekdays(now.weekday())
