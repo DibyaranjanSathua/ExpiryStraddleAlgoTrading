@@ -49,16 +49,18 @@ class MarketFeeds:
         # Just to check if login is successful, fetch user profile
         self._api.get_user_profile()
         # Get the nifty ltp to determine the ATM price
+        symbol_token = self._symbol_parser.nifty_index_token
+        if self._ticker == "NIFTY":
+            symbol_token = self._symbol_parser.nifty_index_token
+        elif self._ticker == "FINNIFTY":
+            symbol_token = self._symbol_parser.finnifty_index_token
         data = self._api.get_ltp_data(
             trading_symbol=self._ticker,
-            symbol_token=self._symbol_parser.nifty_index_token,
+            symbol_token=symbol_token,
             exchange="NSE"
         )
         # Added index to token to symbol mapper
-        if self._ticker == "NIFTY":
-            self._token_symbol_mapper[self._symbol_parser.nifty_index_token] = "NIFTY"
-        elif self._ticker == "FINNIFTY":
-            self._token_symbol_mapper[self._symbol_parser.finnifty_index_token] = "FINNIFTY"
+        self._token_symbol_mapper[symbol_token] = self._ticker
         index = data["ltp"]
         atm = self.get_nearest_50_strike(index)
         pe_strikes = None
@@ -84,7 +86,7 @@ class MarketFeeds:
         # Setup market feed
         self._api.setup_market_feeds()
         self._api.market_feeds.options_tokens = self._option_tokens
-        self._api.market_feeds.index_tokens = [self._symbol_parser.nifty_index_token]
+        self._api.market_feeds.index_tokens = [symbol_token]
         self._api.market_feeds.connect()
 
     def get_option_tokens(
