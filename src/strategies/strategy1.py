@@ -803,7 +803,7 @@ class Strategy1(BaseStrategy):
         total_unrealised_pnl = 0
         transactions = dict()
         for order in orderbook:
-            instrument = Strategy1.orderbook_data_to_instrument(order)
+            instrument = self.orderbook_data_to_instrument(order)
             if instrument.symbol not in transactions:
                 transactions[instrument.symbol] = instrument
             else:
