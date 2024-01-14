@@ -22,6 +22,20 @@ https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-
 5. sudo systemctl restart nginx
 6. sudo nginx -t
 
+## Install PostgesSQL
+https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart
+1. sudo -u postgres psql
+2. CREATE DATABASE algotrading;
+3. CREATE USER algobot WITH PASSWORD 'algobot123';
+4. GRANT ALL PRIVILEGES ON DATABASE algotrading TO algobot;
+5. alembic upgrade head
+
+
+## Initialize the db table
+1. export PYTHONPATH=/home/ubuntu/ExpiryStraddleAlgoTrading
+2. python3 dashboard/db/db_init_table.py
+
+
 ## Deploying dash app to AWS EC2 (Ubuntu instance)
 1. sudo nano /etc/systemd/system/gunicorn.service
 2. Add the following contents
@@ -43,7 +57,8 @@ https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-
 3. sudo systemctl start gunicorn
 4. sudo systemctl enable gunicorn
 5. sudo systemctl status gunicorn
-6. sudo nano /etc/nginx/sites-available/algotrading-dashboard
+6. Test the socket activation mechanism, curl --unix-socket /home/ubuntu/ExpiryStraddleAlgoTrading/gunicorn.sock localhost
+7. sudo nano /etc/nginx/sites-available/algotrading-dashboard
     ```text
     server {
         listen 80;
@@ -55,10 +70,26 @@ https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-
         }
     }
     ```
-7. sudo ln -s /etc/nginx/sites-available/algotrading-dashboard /etc/nginx/sites-enabled 
-8. sudo nginx -t
-9. sudo systemctl restart nginx
-10. Edit /etc/nginx/nginx.conf change user to ubuntu. Else you will see permission issue while connecting to the socket.
+8. sudo ln -s /etc/nginx/sites-available/algotrading-dashboard /etc/nginx/sites-enabled 
+9. sudo nginx -t
+10. sudo systemctl restart nginx
+11. Edit /etc/nginx/nginx.conf change user to ubuntu. Else you will see permission issue while connecting to the socket.
+
+
+## Install Redis
+https://redis.io/docs/install/install-redis/install-redis-on-linux/
+1. sudo apt install lsb-release curl gpg
+2. curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 
+3. echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list 
+4. sudo apt update 
+5. sudo apt install redis
+
+
+## How to reference user database in postgres
+https://stackoverflow.com/questions/22256124/cannot-create-a-database-table-named-user-in-postgresql
+1. INSERT INTO "user" (username, password, role) VALUES ('NIHKA1018', 'password', 'Admin');
+2. select * from "user";
+
 
 ## Crontab
 ```shell
