@@ -50,12 +50,15 @@ class MarketFeeds:
         self._api.get_user_profile()
         # Get the nifty ltp to determine the ATM price
         symbol_token = self._symbol_parser.nifty_index_token
+        trading_symbol = ""
         if self._ticker == "NIFTY":
             symbol_token = self._symbol_parser.nifty_index_token
+            trading_symbol = "NIFTY"
         elif self._ticker == "FINNIFTY":
             symbol_token = self._symbol_parser.finnifty_index_token
+            trading_symbol = "Nifty Fin Service"
         data = self._api.get_ltp_data(
-            trading_symbol=self._ticker,
+            trading_symbol=trading_symbol,
             symbol_token=symbol_token,
             exchange="NSE"
         )

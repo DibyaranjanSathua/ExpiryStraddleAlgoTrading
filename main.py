@@ -29,13 +29,20 @@ def clean_up():
     # Connect to redis and clean up all nifty keys so that we don't end up using some old keys
     redis_backend = RedisBackend()
     redis_backend.connect()
-    redis_backend.cleanup(pattern=f"{STRATEGY_TICKER}*")
+    redis_backend.cleanup(pattern=f"*NIFTY*")
 
 
 def run_market_feed(market_feed_logger: LogFacade, option_type: Optional[str] = None):
     """ Run market feed """
     market_feeds_accounts = config["market_feeds"]
     symbol_parser = AngelBrokingSymbolParser.instance()
+    now = istnow()
+    weekday = Weekdays(now.weekday())
+    strategy_config = config["strategies"][Strategy1.STRATEGY_CODE]
+    ticker_data = strategy_config["ticker"][weekday.name.lower()]
+    ticker_inst = StrategyTicker.get_instance()
+    ticker_inst.ticker = ticker_data["symbol"]
+    ticker_inst.quantity = ticker_data["quantity"]
     if option_type is None:
         market_feed_logger.info(f"Setting up market feeds for both CE or PE strikes")
         account = market_feeds_accounts["CE"]
