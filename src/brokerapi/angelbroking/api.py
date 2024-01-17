@@ -11,10 +11,11 @@ import traceback
 
 import requests
 import pyotp
-from smartapi import SmartConnect, SmartWebSocket as SmartWebSocket_
+from SmartApi import SmartConnect, SmartWebSocket as SmartWebSocket_
+from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 
 from src.brokerapi.base_api import BaseApi, BrokerApiError, BrokerOrderApiError
-from src.brokerapi.angelbroking.websocketv2 import SmartWebSocketV2
+# from src.brokerapi.angelbroking.websocketv2 import SmartWebSocketV2
 from src.strategies.instrument import Instrument, Action
 from src.utils.redis_backend import RedisBackend
 from src.utils.logger import LogFacade
@@ -440,7 +441,7 @@ class AngelBrokingSymbolParser:
         ]
         # Get the index token. By default we will subscribe for index tokens
         self._nifty_index_token = next(
-            (x["token"] for x in self._nifty_instruments if x["symbol"] == "NIFTY"),
+            (x["token"] for x in self._nifty_instruments if x["symbol"] == "NIFTY50"),
             None
         )
         self._banknifty_index_token = next(
