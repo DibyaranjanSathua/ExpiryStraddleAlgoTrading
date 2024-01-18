@@ -441,7 +441,7 @@ class AngelBrokingSymbolParser:
         ]
         # Get the index token. By default we will subscribe for index tokens
         self._nifty_index_token = next(
-            (x["token"] for x in self._nifty_instruments if x["symbol"] == "NIFTY50"),
+            (x["token"] for x in self._nifty_instruments if x["symbol"] == "Nifty 50"),
             None
         )
         self._banknifty_index_token = next(
