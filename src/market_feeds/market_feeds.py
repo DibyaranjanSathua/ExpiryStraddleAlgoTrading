@@ -140,6 +140,9 @@ if __name__ == "__main__":
     symbol_parser = AngelBrokingSymbolParser.instance()
     option_type = "CE"
     account = market_feeds_accounts[option_type]
+    ticker_inst = StrategyTicker.get_instance()
+    ticker_inst.ticker = "FINNIFTY"
+    ticker_inst.quantity = 40
     market_feeds = MarketFeeds(
         api_key=account["api_key"],
         client_id=account["client_id"],
